@@ -23,6 +23,8 @@ import re
 import sys
 import time
 import random
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import cloudscraper
@@ -37,8 +39,9 @@ OUTPUT_FILE = Path(__file__).parent.parent / "players.json"
 BASE_URL  = "https://fifaindex.com"
 LIST_URL  = BASE_URL + "/players/?r=26&order=-rating&page={page}"
 
-DELAY_MIN = 2.2
-DELAY_MAX = 4.5
+DELAY_MIN = 1.0
+DELAY_MAX = 2.5
+WORKERS   = 3  # descargas simultáneas
 
 POSITION_MAP = {
     "GK": "GK",
@@ -339,114 +342,172 @@ def main():
         known_names = existing_names
         print(f"[>] Modo COMPLEMENTO: se omitirán los {len(known_names)} ya conocidos")
 
-    # ── Fase 1: recorrer listado y detectar jugadores nuevos ─────────────────
-    print("\n[Fase 1] Recorriendo listado para detectar jugadores nuevos...")
-    to_fetch = []          # lista de basic dicts a descargar en detalle
-    seen_in_listing = set()
-    page = 1
-    consec_no_new = 0
+    # ── Pipeline: listado + descarga simultánea ──────────────────────────────
+    import queue as queuemod
+    import os
+    import tempfile
 
-    while True:
-        url = LIST_URL.format(page=page)
-        print(f"  Página {page:>4}  |  pendientes={len(to_fetch):>4}", end="", flush=True)
-        html = fetch(session, url)
-        if html is None:
-            print("  ← ERROR")
-            break
+    new_players    = []
+    errors         = []
+    lock           = threading.Lock()
+    save_lock      = threading.Lock()  # solo un save a la vez
+    done_count     = [0]
+    total_found    = [0]
+    SAVE_EVERY     = 20
+    job_queue      = queuemod.Queue(maxsize=WORKERS * 4)
 
-        players = parse_listing(html)
-        if not players:
-            print("  ← sin jugadores (posible fin)")
-            break
+    def save_progress(snapshot):
+        """Guardado atómico: escribe temp file y luego rename para no corromper."""
+        merged = existing + snapshot
+        merged.sort(key=lambda p: p["overall"], reverse=True)
+        seen2, unique2 = set(), []
+        for p in merged:
+            k = p["name"].lower()
+            if k not in seen2:
+                seen2.add(k)
+                unique2.append(p)
+        tmp = OUTPUT_FILE.with_suffix(".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(unique2, f, ensure_ascii=False, separators=(",", ":"))
+        os.replace(tmp, OUTPUT_FILE)  # atómico: nunca deja el archivo corrupto
+        return len(unique2)
 
-        new_in_page = 0
-        for p in players:
-            key = p["name"].lower()
-            if key in seen_in_listing:
-                continue
-            seen_in_listing.add(key)
-            if key not in known_names:
-                to_fetch.append(p)
-                new_in_page += 1
-
-        print(f"  +{new_in_page} nuevos  (página: {len(players)})")
-
-        if new_in_page == 0:
-            consec_no_new += 1
-            if consec_no_new >= 4:
-                print("  4 páginas sin nuevos → fin del listado.")
+    # Worker: consume de la cola y descarga fichas
+    def worker():
+        worker_session = make_session()
+        while True:
+            basic = job_queue.get()
+            if basic is None:  # señal de fin
+                job_queue.task_done()
                 break
-        else:
-            consec_no_new = 0
+            try:
+                detail_url = BASE_URL + basic["href"] + "?r=26"
+                time.sleep(random.uniform(0.5, 1.5))
+                html = fetch(worker_session, detail_url)
+                player = parse_detail(html, basic) if html else None
+            except Exception:
+                player = None
 
-        if args.max_new and len(to_fetch) >= args.max_new:
-            to_fetch = to_fetch[:args.max_new]
-            print(f"  Límite de {args.max_new} jugadores nuevos alcanzado.")
-            break
+            do_save = False
+            snapshot = None
+            with lock:
+                done_count[0] += 1
+                i = done_count[0]
+                tf = total_found[0]
+                if player:
+                    new_players.append(player)
+                    club_str  = f"  {player['club']}" if player['club'] else "  (sin club)"
+                    stats_str = f"  PAC={player['pace']} SHO={player['shooting']} PAS={player['passing']}"
+                    print(f"  [{i:>5}/{tf if tf else '?':>5}] {basic['name']:35} OK{club_str}{stats_str}")
+                else:
+                    errors.append(basic["name"])
+                    print(f"  [{i:>5}/{tf if tf else '?':>5}] {basic['name']:35} ERROR")
 
-        if not has_next_page(html, page):
-            print("  No hay página siguiente → fin.")
-            break
+                if i % SAVE_EVERY == 0:
+                    do_save = True
+                    snapshot = list(new_players)
 
-        page += 1
-        time.sleep(random.uniform(DELAY_MIN, DELAY_MAX))
+            if do_save:
+                with save_lock:
+                    total = save_progress(snapshot)
+                    print(f"\n  [guardado] {total} jugadores en players.json\n")
 
-    if not to_fetch:
-        print("\n[OK] No hay jugadores nuevos que descargar. players.json está completo.")
+            job_queue.task_done()
+
+    # Productor: recorre el listado e introduce jugadores en la cola
+    def producer():
+        seen_in_listing = set()
+        page = 1
+        consec_no_new = 0
+        found = 0
+
+        while True:
+            url = LIST_URL.format(page=page)
+            print(f"  [listado] Página {page:>4}  |  encontrados={found:>5}", flush=True)
+            html = fetch(session, url)
+            if html is None:
+                break
+
+            players = parse_listing(html)
+            if not players:
+                break
+
+            new_in_page = 0
+            for p in players:
+                key = p["name"].lower()
+                if key in seen_in_listing:
+                    continue
+                seen_in_listing.add(key)
+                if key not in known_names:
+                    job_queue.put(p)  # bloquea si la cola está llena (backpressure)
+                    found += 1
+                    new_in_page += 1
+
+            with lock:
+                total_found[0] = found
+
+            if new_in_page == 0:
+                consec_no_new += 1
+                if consec_no_new >= 4:
+                    print("  [listado] 4 paginas sin nuevos - fin.")
+                    break
+            else:
+                consec_no_new = 0
+
+            if args.max_new and found >= args.max_new:
+                print(f"  [listado] Limite {args.max_new} alcanzado.")
+                break
+
+            if not has_next_page(html, page):
+                break
+
+            page += 1
+            time.sleep(random.uniform(1.0, 2.0))
+
+        listing_done.set()
+        print(f"\n  [listado] Completado: {found} jugadores nuevos encontrados")
+
+    if not args.full and len(known_names) > 0:
+        print("\n[Pipeline] Escaneando listado y descargando en paralelo...")
+    else:
+        print("\n[Pipeline] Descargando todos los jugadores...")
+
+    # Arrancar workers
+    threads = []
+    for _ in range(WORKERS):
+        t = threading.Thread(target=worker, daemon=True)
+        t.start()
+        threads.append(t)
+
+    # Arrancar productor
+    prod_thread = threading.Thread(target=producer, daemon=True)
+    prod_thread.start()
+
+    try:
+        prod_thread.join()
+        # Enviar señales de fin a cada worker
+        for _ in range(WORKERS):
+            job_queue.put(None)
+        for t in threads:
+            t.join()
+    except KeyboardInterrupt:
+        print("\n\n[!] Cancelado.")
+
+    # ── Guardar final ────────────────────────────────────────────────────────
+    print(f"\n[>] Guardando resultado final...")
+    try:
+        total = save_progress(list(new_players))
+    except Exception as e:
+        print(f"ERROR al guardar: {e}")
         return
-
-    print(f"\n[Fase 2] Descargando ficha de {len(to_fetch)} jugadores nuevos...")
-
-    new_players = []
-    errors = []
-
-    for i, basic in enumerate(to_fetch):
-        detail_url = BASE_URL + basic["href"] + "?r=26"
-        print(f"  [{i+1:>4}/{len(to_fetch)}] {basic['name']:35} OVR={basic['overall']}", end="", flush=True)
-
-        html = fetch(session, detail_url)
-        if html is None:
-            print("  ← ERROR (omitido)")
-            errors.append(basic["name"])
-            continue
-
-        player = parse_detail(html, basic)
-        if player:
-            new_players.append(player)
-            club_str = f"  {player['club']}" if player['club'] else "  (sin club)"
-            stats_str = f"  PAC={player['pace']} SHO={player['shooting']} PAS={player['passing']}"
-            print(f"  OK{club_str}{stats_str}")
-        else:
-            print("  ← parse fallido")
-            errors.append(basic["name"])
-
-        time.sleep(random.uniform(DELAY_MIN, DELAY_MAX))
-
-    # ── Fusionar y guardar ───────────────────────────────────────────────────
-    print(f"\n[>] Fusionando: {len(existing)} existentes + {len(new_players)} nuevos")
-
-    merged = existing + new_players
-    # Filtrar sin club, dedup por nombre (mayor OVR primero)
-    merged = [p for p in merged if p.get("club", "").strip()]
-    merged.sort(key=lambda p: p["overall"], reverse=True)
-    seen, unique = set(), []
-    for p in merged:
-        k = p["name"].lower()
-        if k not in seen:
-            seen.add(k)
-            unique.append(p)
-
-    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
-        json.dump(unique, f, ensure_ascii=False, separators=(",", ":"))
-
     size_kb = OUTPUT_FILE.stat().st_size // 1024
-    print(f"\n[OK] {OUTPUT_FILE.name}  ->  {len(unique)} jugadores  ({size_kb} KB)")
+    print(f"\n[OK] {OUTPUT_FILE.name}  ->  {total} jugadores  ({size_kb} KB)")
     if errors:
         print(f"     {len(errors)} errores: {', '.join(errors[:5])}" +
-              (f" ... y {len(errors)-5} más" if len(errors) > 5 else ""))
-    print("\nPróximos pasos:")
+              (f" ... y {len(errors)-5} mas" if len(errors) > 5 else ""))
+    print("\nProximos pasos:")
     print("  1. git add players.json && git commit -m 'players: +fifaindex' && git push")
-    print("  2. En la app: Pizarra → 'Actualizar BD'")
+    print("  2. En la app: Pizarra -> 'Actualizar BD'")
 
 if __name__ == "__main__":
     main()
