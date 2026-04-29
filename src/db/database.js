@@ -72,7 +72,8 @@ export const initDB = () => {
 // PLAYERS
 // ─────────────────────────────────────────────────────────────
 
-const PLAYERS_URL = process.env.EXPO_PUBLIC_PLAYERS_URL || '';
+const PLAYERS_URL = process.env.EXPO_PUBLIC_PLAYERS_URL ||
+  'https://raw.githubusercontent.com/Caperp22/fc26-companion/master/players.json';
 
 export const updateSquadsFromCloud = async (onProgress) => {
   if (!PLAYERS_URL || PLAYERS_URL.includes('TU_USUARIO')) {

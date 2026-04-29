@@ -6,11 +6,17 @@
     "preview": {
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_PLAYERS_URL": "https://raw.githubusercontent.com/Caperp22/fc26-companion/master/players.json"
       }
     },
     "production": {
       "android": {
         "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_PLAYERS_URL": "https://raw.githubusercontent.com/Caperp22/fc26-companion/master/players.json"
       }
     }
   }
