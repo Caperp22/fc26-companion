@@ -32,12 +32,13 @@ const RESERVE_SLOTS = Array.from({ length: 5 }, (_, i) => ({ id: `R${i}`, label:
 
 // Orden de formaciones: 3 atrás → 4 atrás → 5 atrás
 const FORMATION_ORDER = [
-  '3-4-3', '3-5-2',
+  '3-4-1-2', '3-4-3', '3-5-2',
   '4-3-3', '4-3-3 (A)', '4-3-3 (D)',
-  '4-4-2', '4-4-2 ♦',
-  '4-2-3-1', '4-5-1',
-  '4-1-4-1', '4-1-2-1-2', '4-3-1-2', '4-1-3-2',
-  '5-3-2', '5-4-1',
+  '4-4-2', '4-4-2 ♦', '4-4-1-1',
+  '4-2-3-1', '4-2-3-1 (W)',
+  '4-5-1', '4-1-4-1', '4-1-2-1-2',
+  '4-3-1-2', '4-1-3-2', '4-3-2-1',
+  '5-2-2-1', '5-3-2', '5-4-1',
 ];
 
 const getSlotBorderColor = (pos) => {
@@ -78,6 +79,73 @@ const chunkArray = (arr, size) => {
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
   return out;
 };
+
+// ─── Mini cancha para el picker ────────────────────────────────
+function MiniPitch({ slots }) {
+  const W = 72;
+  const H = 108;
+  return (
+    <View style={{ width: W, height: H, backgroundColor: '#166534', borderRadius: 5, overflow: 'hidden' }}>
+      <View style={{ position: 'absolute', left: W * 0.08, right: W * 0.08, top: H / 2, height: 0.8, backgroundColor: 'rgba(255,255,255,0.3)' }} />
+      {slots.map((slot) => {
+        const d = 7;
+        const color = getSlotBorderColor(slot.position);
+        return (
+          <View
+            key={slot.id}
+            style={{
+              position: 'absolute',
+              left: slot.x * W - d / 2,
+              top: slot.y * H - d / 2,
+              width: d, height: d, borderRadius: d / 2,
+              backgroundColor: color,
+            }}
+          />
+        );
+      })}
+    </View>
+  );
+}
+
+// ─── Modal selector de formación ───────────────────────────────
+function FormationPickerModal({ visible, currentFormation, onSelect, onClose }) {
+  const orderedFormations = FORMATION_ORDER.filter((k) => FORMATIONS[k]);
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <TouchableOpacity style={fpModal.overlay} activeOpacity={1} onPress={onClose}>
+        <View style={fpModal.sheet}>
+          <View style={fpModal.header}>
+            <Text style={fpModal.title}>Seleccionar formación</Text>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close" size={22} color="#94a3b8" />
+            </TouchableOpacity>
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={fpModal.grid}>
+            {orderedFormations.map((key) => {
+              const isActive = key === currentFormation;
+              return (
+                <TouchableOpacity
+                  key={key}
+                  style={[fpModal.card, isActive && fpModal.cardActive]}
+                  onPress={() => { onClose(); onSelect(key); }}
+                  activeOpacity={0.75}
+                >
+                  <MiniPitch slots={FORMATIONS[key].slots} />
+                  <Text style={[fpModal.cardLabel, isActive && fpModal.cardLabelActive]}>{key}</Text>
+                  {isActive && (
+                    <View style={fpModal.checkBadge}>
+                      <Ionicons name="checkmark" size={11} color="#fff" />
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
 
 // ─── Bench / Reserve card ───────────────────────────────────────
 function BenchCard({ label, player, pendingPlayer, isSelected, onPress, onLongPress, style }) {
@@ -247,11 +315,12 @@ export default function SquadBuilderScreen({ navigation }) {
     setLoadedIds, newLineup, loadLineup,
   } = useSquadStore();
 
-  const [isUpdating, setIsUpdating]       = useState(false);
-  const [updateProgress, setUpdateProgress] = useState('');
-  const [showSaveModal, setShowSaveModal]  = useState(false);
-  const [selectedSlot, setSelectedSlot]   = useState(null);
-  const [teamLineups, setTeamLineups]     = useState([]);
+  const [isUpdating, setIsUpdating]           = useState(false);
+  const [updateProgress, setUpdateProgress]   = useState('');
+  const [showSaveModal, setShowSaveModal]      = useState(false);
+  const [showFormationPicker, setShowFormationPicker] = useState(false);
+  const [selectedSlot, setSelectedSlot]       = useState(null);
+  const [teamLineups, setTeamLineups]         = useState([]);
 
   const { width: screenWidth } = useWindowDimensions();
 
@@ -446,9 +515,6 @@ export default function SquadBuilderScreen({ navigation }) {
      : reserves[selectedSlot.id])
     : null;
 
-  // Formaciones ordenadas y filtradas a las que existen
-  const orderedFormations = FORMATION_ORDER.filter((k) => FORMATIONS[k]);
-
   return (
     <View style={styles.container}>
       <SaveModal
@@ -490,25 +556,20 @@ export default function SquadBuilderScreen({ navigation }) {
         </View>
       )}
 
-      {/* ── Chips de formación (ordenados) ─────────────────────── */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.formationScroll}
-        contentContainerStyle={styles.formationContainer}
-      >
-        {orderedFormations.map((key) => (
-          <TouchableOpacity
-            key={key}
-            style={[styles.formationChip, formation === key && styles.formationChipActive]}
-            onPress={() => handleFormationChange(key)}
-          >
-            <Text style={[styles.formationChipText, formation === key && styles.formationChipTextActive]}>
-              {key}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+      {/* ── Selector de formación ──────────────────────────────── */}
+      <FormationPickerModal
+        visible={showFormationPicker}
+        currentFormation={formation}
+        onSelect={handleFormationChange}
+        onClose={() => setShowFormationPicker(false)}
+      />
+      <TouchableOpacity style={styles.formationBar} onPress={() => setShowFormationPicker(true)}>
+        <Text style={styles.formationBarName}>{formation}</Text>
+        <View style={styles.formationBarRight}>
+          <Text style={styles.formationBarChange}>Cambiar</Text>
+          <Ionicons name="chevron-down" size={15} color="#60a5fa" />
+        </View>
+      </TouchableOpacity>
 
       {/* ── Tabs de alineación (solo si hay 2+) ───────────────── */}
       {teamLineups.length >= 2 && (
@@ -705,18 +766,14 @@ export default function SquadBuilderScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a' },
 
-  formationScroll: {
-    maxHeight: 46, flexGrow: 0, flexShrink: 0,
-    backgroundColor: '#0f172a', borderBottomWidth: 1, borderBottomColor: '#1e293b',
+  formationBar: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    backgroundColor: '#0f172a', paddingHorizontal: 16, paddingVertical: 11,
+    borderBottomWidth: 1, borderBottomColor: '#1e293b',
   },
-  formationContainer: { paddingHorizontal: 12, paddingVertical: 7, gap: 8, alignItems: 'center' },
-  formationChip: {
-    paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20,
-    backgroundColor: '#1e293b', borderWidth: 1, borderColor: '#334155',
-  },
-  formationChipActive:     { backgroundColor: '#1d4ed8', borderColor: '#1d4ed8' },
-  formationChipText:       { color: '#94a3b8', fontWeight: '700', fontSize: 12 },
-  formationChipTextActive: { color: '#fff' },
+  formationBarName:   { color: '#f1f5f9', fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
+  formationBarRight:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  formationBarChange: { color: '#60a5fa', fontSize: 13, fontWeight: '600' },
 
   lineupTabsRow: {
     flexDirection: 'row', backgroundColor: '#0f172a',
@@ -821,6 +878,26 @@ const styles = StyleSheet.create({
 
   progressRow: { flexDirection: 'row', alignItems: 'center', gap: 10, justifyContent: 'center' },
   progressText: { color: '#94a3b8', fontSize: 13 },
+});
+
+const fpModal = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.72)', justifyContent: 'flex-end' },
+  sheet:   { backgroundColor: '#1e293b', borderTopLeftRadius: 22, borderTopRightRadius: 22, maxHeight: '82%', paddingBottom: 28 },
+  header:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#334155' },
+  title:   { color: '#f1f5f9', fontSize: 17, fontWeight: 'bold' },
+  grid:    { flexDirection: 'row', flexWrap: 'wrap', padding: 12, gap: 10, justifyContent: 'space-between' },
+  card: {
+    width: '47%', backgroundColor: '#0f172a', borderRadius: 14, paddingVertical: 12,
+    alignItems: 'center', gap: 8, borderWidth: 1.5, borderColor: '#334155',
+  },
+  cardActive:      { borderColor: '#3b82f6', backgroundColor: '#0f2d5f' },
+  cardLabel:       { color: '#94a3b8', fontWeight: '700', fontSize: 13 },
+  cardLabelActive: { color: '#60a5fa' },
+  checkBadge: {
+    position: 'absolute', top: 8, right: 8,
+    width: 18, height: 18, borderRadius: 9, backgroundColor: '#3b82f6',
+    justifyContent: 'center', alignItems: 'center',
+  },
 });
 
 const saveModal = StyleSheet.create({

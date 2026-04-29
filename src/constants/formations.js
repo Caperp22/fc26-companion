@@ -232,4 +232,84 @@ export const FORMATIONS = {
       { id: 'ST2',  label: 'DC',  position: 'ST',  x: 0.65, y: 0.14 },
     ],
   },
+
+  '3-4-1-2': {
+    slots: [
+      { id: 'GK',   label: 'PO',  position: 'GK',  x: 0.50, y: 0.87 },
+      { id: 'CB1',  label: 'DFC', position: 'CB',  x: 0.22, y: 0.72 },
+      { id: 'CB2',  label: 'DFC', position: 'CB',  x: 0.50, y: 0.73 },
+      { id: 'CB3',  label: 'DFC', position: 'CB',  x: 0.78, y: 0.72 },
+      { id: 'LM',   label: 'MI',  position: 'LM',  x: 0.10, y: 0.53 },
+      { id: 'LCM',  label: 'MC',  position: 'CM',  x: 0.35, y: 0.48 },
+      { id: 'RCM',  label: 'MC',  position: 'CM',  x: 0.65, y: 0.48 },
+      { id: 'RM',   label: 'MD',  position: 'RM',  x: 0.90, y: 0.53 },
+      { id: 'CAM',  label: 'MCO', position: 'CAM', x: 0.50, y: 0.30 },
+      { id: 'ST1',  label: 'DC',  position: 'ST',  x: 0.33, y: 0.13 },
+      { id: 'ST2',  label: 'DC',  position: 'ST',  x: 0.67, y: 0.13 },
+    ],
+  },
+
+  '4-2-3-1 (W)': {
+    slots: [
+      { id: 'GK',   label: 'PO',  position: 'GK',  x: 0.50, y: 0.87 },
+      { id: 'LB',   label: 'LI',  position: 'LB',  x: 0.12, y: 0.70 },
+      { id: 'CB1',  label: 'DFC', position: 'CB',  x: 0.35, y: 0.72 },
+      { id: 'CB2',  label: 'DFC', position: 'CB',  x: 0.65, y: 0.72 },
+      { id: 'RB',   label: 'LD',  position: 'RB',  x: 0.88, y: 0.70 },
+      { id: 'CDM1', label: 'MCD', position: 'CDM', x: 0.35, y: 0.57 },
+      { id: 'CDM2', label: 'MCD', position: 'CDM', x: 0.65, y: 0.57 },
+      { id: 'LW',   label: 'EI',  position: 'LW',  x: 0.07, y: 0.30 },
+      { id: 'CAM',  label: 'MCO', position: 'CAM', x: 0.50, y: 0.28 },
+      { id: 'RW',   label: 'ED',  position: 'RW',  x: 0.93, y: 0.30 },
+      { id: 'ST',   label: 'DC',  position: 'ST',  x: 0.50, y: 0.13 },
+    ],
+  },
+
+  '4-4-1-1': {
+    slots: [
+      { id: 'GK',   label: 'PO',  position: 'GK',  x: 0.50, y: 0.87 },
+      { id: 'LB',   label: 'LI',  position: 'LB',  x: 0.12, y: 0.70 },
+      { id: 'CB1',  label: 'DFC', position: 'CB',  x: 0.35, y: 0.72 },
+      { id: 'CB2',  label: 'DFC', position: 'CB',  x: 0.65, y: 0.72 },
+      { id: 'RB',   label: 'LD',  position: 'RB',  x: 0.88, y: 0.70 },
+      { id: 'LM',   label: 'MI',  position: 'LM',  x: 0.10, y: 0.47 },
+      { id: 'LCM',  label: 'MC',  position: 'CM',  x: 0.35, y: 0.44 },
+      { id: 'RCM',  label: 'MC',  position: 'CM',  x: 0.65, y: 0.44 },
+      { id: 'RM',   label: 'MD',  position: 'RM',  x: 0.90, y: 0.47 },
+      { id: 'CF',   label: 'SD',  position: 'CAM', x: 0.50, y: 0.27 },
+      { id: 'ST',   label: 'DC',  position: 'ST',  x: 0.50, y: 0.12 },
+    ],
+  },
+
+  '4-3-2-1': {
+    slots: [
+      { id: 'GK',   label: 'PO',  position: 'GK',  x: 0.50, y: 0.87 },
+      { id: 'LB',   label: 'LI',  position: 'LB',  x: 0.12, y: 0.70 },
+      { id: 'CB1',  label: 'DFC', position: 'CB',  x: 0.35, y: 0.72 },
+      { id: 'CB2',  label: 'DFC', position: 'CB',  x: 0.65, y: 0.72 },
+      { id: 'RB',   label: 'LD',  position: 'RB',  x: 0.88, y: 0.70 },
+      { id: 'LCM',  label: 'MC',  position: 'CM',  x: 0.22, y: 0.52 },
+      { id: 'CM',   label: 'MC',  position: 'CM',  x: 0.50, y: 0.49 },
+      { id: 'RCM',  label: 'MC',  position: 'CM',  x: 0.78, y: 0.52 },
+      { id: 'LAM',  label: 'MCO', position: 'CAM', x: 0.33, y: 0.29 },
+      { id: 'RAM',  label: 'MCO', position: 'CAM', x: 0.67, y: 0.29 },
+      { id: 'ST',   label: 'DC',  position: 'ST',  x: 0.50, y: 0.12 },
+    ],
+  },
+
+  '5-2-2-1': {
+    slots: [
+      { id: 'GK',   label: 'PO',  position: 'GK',  x: 0.50, y: 0.87 },
+      { id: 'LWB',  label: 'CAI', position: 'LWB', x: 0.07, y: 0.67 },
+      { id: 'CB1',  label: 'DFC', position: 'CB',  x: 0.25, y: 0.73 },
+      { id: 'CB2',  label: 'DFC', position: 'CB',  x: 0.50, y: 0.75 },
+      { id: 'CB3',  label: 'DFC', position: 'CB',  x: 0.75, y: 0.73 },
+      { id: 'RWB',  label: 'CAD', position: 'RWB', x: 0.93, y: 0.67 },
+      { id: 'CDM1', label: 'MCD', position: 'CDM', x: 0.33, y: 0.53 },
+      { id: 'CDM2', label: 'MCD', position: 'CDM', x: 0.67, y: 0.53 },
+      { id: 'CAM1', label: 'MCO', position: 'CAM', x: 0.30, y: 0.32 },
+      { id: 'CAM2', label: 'MCO', position: 'CAM', x: 0.70, y: 0.32 },
+      { id: 'ST',   label: 'DC',  position: 'ST',  x: 0.50, y: 0.12 },
+    ],
+  },
 };
