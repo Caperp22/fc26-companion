@@ -461,7 +461,7 @@ export default function SquadBuilderScreen({ navigation }) {
               <Ionicons name="cloud-download-outline" size={16} color="#fff" />
               <Text style={styles.updateButtonText}>Actualizar BD</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.teamsButton} onPress={() => navigation.navigate('Teams')}>
+            <TouchableOpacity style={styles.teamsButton} onPress={() => navigation.push('Teams')}>
               <Ionicons name="shield-outline" size={16} color="#60a5fa" />
               <Text style={styles.teamsButtonText}>Mis Equipos</Text>
             </TouchableOpacity>
