@@ -41,3 +41,9 @@ app-example
 # generated native folders
 /ios
 /android
+
+# Kaggle downloads temporales
+tmp_kaggle/
+
+# Variables de entorno
+.env

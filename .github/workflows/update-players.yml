@@ -1,0 +1,43 @@
+name: Update FC26 Player Data
+
+on:
+  # Se ejecuta automáticamente cada lunes a las 4:00 AM UTC
+  # (cuando EA suele publicar actualizaciones de ratings)
+  schedule:
+    - cron: '0 4 * * 1'
+
+  # Permite ejecutarlo manualmente desde GitHub Actions
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Download and convert player data
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+        run: python scripts/fetch_players.py
+
+      - name: Commit updated players.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add players.json
+          # Solo hace commit si el archivo realmente cambió
+          git diff --staged --quiet || git commit -m "chore: update FC26 player data $(date +'%Y-%m-%d') [automated]"
+          git push
