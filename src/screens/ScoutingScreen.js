@@ -199,8 +199,10 @@ export default function ScoutingScreen({ route, navigation }) {
   const [clubFilter, setClubFilter] = useState('');
   const [leagueFilter, setLeagueFilter] = useState('');
   const [nationalityFilter, setNationalityFilter] = useState('');
-  const [players, setPlayers] = useState([]);
+  const [players, setPlayers]         = useState([]);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [compareMode, setCompareMode]   = useState(false);
+  const [comparePlayerA, setComparePlayerA] = useState(null);
 
   useEffect(() => {
     const filtersActive =
@@ -229,12 +231,22 @@ export default function ScoutingScreen({ route, navigation }) {
   }, [searchQuery, selectedPosition, minOverall, minPotential, clubFilter, leagueFilter, nationalityFilter]);
 
   const handleCardPress = (player) => {
-    navigation.navigate('PlayerDetail', {
-      player,
-      selectionMode,
-      slotId,
-      slotLabel,
-    });
+    if (compareMode) {
+      if (!comparePlayerA) {
+        setComparePlayerA(player);
+      } else if (comparePlayerA.id !== player.id) {
+        navigation.navigate('PlayerCompare', { playerA: comparePlayerA, playerB: player });
+        setCompareMode(false);
+        setComparePlayerA(null);
+      }
+      return;
+    }
+    navigation.navigate('PlayerDetail', { player, selectionMode, slotId, slotLabel });
+  };
+
+  const handleToggleCompare = () => {
+    setCompareMode(m => !m);
+    setComparePlayerA(null);
   };
 
   const handleClearFilters = () => {
@@ -286,16 +298,38 @@ export default function ScoutingScreen({ route, navigation }) {
         </View>
       )}
 
+      {/* Banner modo comparar */}
+      {compareMode && (
+        <View style={styles.compareBanner}>
+          <Text style={styles.compareBannerText}>
+            {comparePlayerA
+              ? `✓ ${comparePlayerA.name.split(' ').slice(-1)[0]} · Elige el 2º jugador`
+              : 'Toca el 1er jugador a comparar'}
+          </Text>
+          <TouchableOpacity onPress={handleToggleCompare}>
+            <Text style={styles.compareCancelText}>Cancelar</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Búsqueda por nombre */}
       <View style={styles.searchSection}>
         <TextInput
-          style={styles.searchInput}
+          style={[styles.searchInput, { flex: 1 }]}
           placeholder="Buscar por nombre..."
           value={searchQuery}
           onChangeText={setSearchQuery}
           placeholderTextColor="#94a3b8"
           autoCorrect={false}
         />
+        {!selectionMode && (
+          <TouchableOpacity
+            style={[styles.compareBtn, compareMode && styles.compareBtnActive]}
+            onPress={handleToggleCompare}
+          >
+            <Text style={[styles.compareBtnText, compareMode && styles.compareBtnTextActive]}>⇄</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Chips de posición en español */}
@@ -398,13 +432,6 @@ const styles = StyleSheet.create({
   selectionBannerText: { color: 'rgba(255,255,255,0.85)', fontSize: 13 },
   slotLabelHighlight: { color: '#fff', fontWeight: 'bold' },
 
-  searchSection: {
-    backgroundColor: '#1e293b',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#334155',
-  },
   searchInput: {
     height: 44,
     backgroundColor: '#0f172a',
@@ -496,6 +523,23 @@ const styles = StyleSheet.create({
     borderRadius: 12, borderWidth: 1, borderColor: '#334155', alignItems: 'center',
   },
   addManualBtnText: { color: '#60a5fa', fontSize: 14, fontWeight: '600' },
+
+  // Compare mode
+  searchSection: { flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#1e293b', paddingHorizontal: 14, paddingVertical: 10,
+    borderBottomWidth: 1, borderBottomColor: '#334155' },
+  compareBanner: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    backgroundColor: '#1a2f4e', borderLeftWidth: 4, borderLeftColor: '#3b82f6',
+    paddingHorizontal: 14, paddingVertical: 10,
+  },
+  compareBannerText:   { color: '#93c5fd', fontSize: 13, flex: 1 },
+  compareCancelText:   { color: '#64748b', fontSize: 12, fontWeight: '600' },
+  compareBtn:          { width: 40, height: 40, borderRadius: 10, backgroundColor: '#1e293b',
+    borderWidth: 1, borderColor: '#334155', justifyContent: 'center', alignItems: 'center' },
+  compareBtnActive:    { backgroundColor: '#1e3a5f', borderColor: '#3b82f6' },
+  compareBtnText:      { color: '#475569', fontSize: 18, fontWeight: '700' },
+  compareBtnTextActive: { color: '#60a5fa' },
 });
 
 const modal = StyleSheet.create({

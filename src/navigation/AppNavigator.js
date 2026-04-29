@@ -5,15 +5,18 @@ import AnalysisScreen from '../screens/AnalysisScreen';
 import BudgetScreen from '../screens/BudgetScreen';
 import LeaguePlayersScreen from '../screens/LeaguePlayersScreen';
 import LeaguesScreen from '../screens/LeaguesScreen';
+import PlayerCompareScreen from '../screens/PlayerCompareScreen';
 import PlayerDetailScreen from '../screens/PlayerDetailScreen';
 import ScoutingScreen from '../screens/ScoutingScreen';
+import ShortlistScreen from '../screens/ShortlistScreen';
 import SquadBuilderScreen from '../screens/SquadBuilderScreen';
 import TeamsScreen from '../screens/TeamsScreen';
 
-const Tab = createBottomTabNavigator();
-const SquadStack    = createNativeStackNavigator();
-const LeaguesStack  = createNativeStackNavigator();
-const AnalysisStack = createNativeStackNavigator();
+const Tab          = createBottomTabNavigator();
+const SquadStack   = createNativeStackNavigator();
+const ShortStack   = createNativeStackNavigator();
+const LeaguesStack = createNativeStackNavigator();
+const AnalStack    = createNativeStackNavigator();
 
 const HEADER = {
   headerStyle: { backgroundColor: '#0f172a' },
@@ -24,63 +27,59 @@ const HEADER = {
 function SquadStackNavigator() {
   return (
     <SquadStack.Navigator screenOptions={HEADER}>
-      <SquadStack.Screen
-        name="SquadBuilder"
-        component={SquadBuilderScreen}
-        options={{ title: 'Mi Pizarra' }}
-      />
-      <SquadStack.Screen
-        name="Teams"
-        component={TeamsScreen}
-        options={{ title: 'Mis Equipos' }}
-      />
-      <SquadStack.Screen
-        name="Scouting"
-        component={ScoutingScreen}
-        options={{ title: 'Red de Ojeadores' }}
-      />
-      <SquadStack.Screen
-        name="PlayerDetail"
-        component={PlayerDetailScreen}
-        options={{ title: 'Ficha del Jugador' }}
+      <SquadStack.Screen name="SquadBuilder" component={SquadBuilderScreen} options={{ title: 'Mi Pizarra' }} />
+      <SquadStack.Screen name="Teams"        component={TeamsScreen}        options={{ title: 'Mis Equipos' }} />
+      <SquadStack.Screen name="Scouting"     component={ScoutingScreen}     options={{ title: 'Red de Ojeadores' }} />
+      <SquadStack.Screen name="PlayerDetail" component={PlayerDetailScreen} options={{ title: 'Ficha del Jugador' }} />
+      <SquadStack.Screen name="PlayerCompare" component={PlayerCompareScreen}
+        options={({ route }) => ({
+          title: `${route.params?.playerA?.name?.split(' ').slice(-1)[0] ?? '?'} vs ${route.params?.playerB?.name?.split(' ').slice(-1)[0] ?? '?'}`,
+        })}
       />
     </SquadStack.Navigator>
+  );
+}
+
+function ShortlistStackNavigator() {
+  return (
+    <ShortStack.Navigator screenOptions={HEADER}>
+      <ShortStack.Screen name="Shortlist"    component={ShortlistScreen}    options={{ title: 'Objetivos de Fichaje' }} />
+      <ShortStack.Screen name="PlayerDetail" component={PlayerDetailScreen} options={{ title: 'Ficha del Jugador' }} />
+      <ShortStack.Screen name="PlayerCompare" component={PlayerCompareScreen}
+        options={({ route }) => ({
+          title: `${route.params?.playerA?.name?.split(' ').slice(-1)[0] ?? '?'} vs ${route.params?.playerB?.name?.split(' ').slice(-1)[0] ?? '?'}`,
+        })}
+      />
+    </ShortStack.Navigator>
   );
 }
 
 function LeaguesStackNavigator() {
   return (
     <LeaguesStack.Navigator screenOptions={HEADER}>
-      <LeaguesStack.Screen
-        name="Leagues"
-        component={LeaguesScreen}
-        options={{ title: 'Ligas y Selecciones' }}
-      />
-      <LeaguesStack.Screen
-        name="LeaguePlayers"
-        component={LeaguePlayersScreen}
-        options={({ route }) => ({ title: route.params?.title ?? 'Jugadores' })}
-      />
+      <LeaguesStack.Screen name="Leagues"       component={LeaguesScreen}       options={{ title: 'Ligas y Selecciones' }} />
+      <LeaguesStack.Screen name="LeaguePlayers" component={LeaguePlayersScreen} options={({ route }) => ({ title: route.params?.title ?? 'Jugadores' })} />
+      <LeaguesStack.Screen name="PlayerDetail"  component={PlayerDetailScreen}  options={{ title: 'Ficha del Jugador' }} />
     </LeaguesStack.Navigator>
   );
 }
 
 function AnalysisStackNavigator() {
   return (
-    <AnalysisStack.Navigator screenOptions={HEADER}>
-      <AnalysisStack.Screen
-        name="Analysis"
-        component={AnalysisScreen}
-        options={{ title: 'Análisis' }}
-      />
-      <AnalysisStack.Screen
-        name="PlayerDetail"
-        component={PlayerDetailScreen}
-        options={{ title: 'Ficha del Jugador' }}
-      />
-    </AnalysisStack.Navigator>
+    <AnalStack.Navigator screenOptions={HEADER}>
+      <AnalStack.Screen name="Analysis"     component={AnalysisScreen}     options={{ title: 'Análisis' }} />
+      <AnalStack.Screen name="PlayerDetail" component={PlayerDetailScreen} options={{ title: 'Ficha del Jugador' }} />
+    </AnalStack.Navigator>
   );
 }
+
+const TAB_ICONS = {
+  Pizarra:     { on: 'football',      off: 'football-outline'      },
+  Objetivos:   { on: 'star',          off: 'star-outline'          },
+  Presupuesto: { on: 'wallet',        off: 'wallet-outline'        },
+  Ligas:       { on: 'trophy',        off: 'trophy-outline'        },
+  Analisis:    { on: 'analytics',     off: 'analytics-outline'     },
+};
 
 export default function AppNavigator() {
   return (
@@ -89,43 +88,21 @@ export default function AppNavigator() {
         headerStyle: { backgroundColor: '#0f172a' },
         headerTintColor: '#f1f5f9',
         headerShadowVisible: false,
-        tabBarStyle: {
-          backgroundColor: '#0f172a',
-          borderTopColor: '#1e293b',
-          borderTopWidth: 1,
-        },
+        tabBarStyle: { backgroundColor: '#0f172a', borderTopColor: '#1e293b', borderTopWidth: 1 },
         tabBarActiveTintColor: '#3b82f6',
         tabBarInactiveTintColor: '#475569',
-        tabBarIcon: ({ color, size }) => {
-          let icon = 'football-outline';
-          if (route.name === 'Pizarra') icon = 'football-outline';
-          else if (route.name === 'Presupuesto') icon = 'wallet-outline';
-          else if (route.name === 'Ligas') icon = 'trophy-outline';
-          else if (route.name === 'Analisis') icon = 'analytics-outline';
-          return <Ionicons name={icon} size={size} color={color} />;
+        tabBarIcon: ({ color, size, focused }) => {
+          const icons = TAB_ICONS[route.name];
+          const name  = icons ? (focused ? icons.on : icons.off) : 'ellipse-outline';
+          return <Ionicons name={name} size={size} color={color} />;
         },
       })}
     >
-      <Tab.Screen
-        name="Pizarra"
-        component={SquadStackNavigator}
-        options={{ headerShown: false, tabBarLabel: 'Pizarra' }}
-      />
-      <Tab.Screen
-        name="Presupuesto"
-        component={BudgetScreen}
-        options={{ title: 'Gestor Financiero', tabBarLabel: 'Presupuesto' }}
-      />
-      <Tab.Screen
-        name="Ligas"
-        component={LeaguesStackNavigator}
-        options={{ headerShown: false, tabBarLabel: 'Ligas' }}
-      />
-      <Tab.Screen
-        name="Analisis"
-        component={AnalysisStackNavigator}
-        options={{ headerShown: false, tabBarLabel: 'Análisis' }}
-      />
+      <Tab.Screen name="Pizarra"     component={SquadStackNavigator}    options={{ headerShown: false, tabBarLabel: 'Pizarra' }} />
+      <Tab.Screen name="Objetivos"   component={ShortlistStackNavigator} options={{ headerShown: false, tabBarLabel: 'Objetivos' }} />
+      <Tab.Screen name="Presupuesto" component={BudgetScreen}            options={{ title: 'Gestor Financiero', tabBarLabel: 'Presupuesto' }} />
+      <Tab.Screen name="Ligas"       component={LeaguesStackNavigator}   options={{ headerShown: false, tabBarLabel: 'Ligas' }} />
+      <Tab.Screen name="Analisis"    component={AnalysisStackNavigator}  options={{ headerShown: false, tabBarLabel: 'Análisis' }} />
     </Tab.Navigator>
   );
 }

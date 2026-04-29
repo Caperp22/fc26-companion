@@ -496,17 +496,31 @@ export default function SquadBuilderScreen({ navigation }) {
   };
 
   // ── Actualizar BD ───────────────────────────────────────────────
-  const handleUpdateSquads = async () => {
+  const runUpdate = async (force = false) => {
     setIsUpdating(true);
-    setUpdateProgress('Iniciando...');
-    const result = await updateSquadsFromCloud((msg) => setUpdateProgress(msg));
+    setUpdateProgress('Verificando...');
+    const result = await updateSquadsFromCloud((msg) => setUpdateProgress(msg), force);
     setIsUpdating(false);
     setUpdateProgress('');
-    Alert.alert(
-      result.ok ? 'Base de datos actualizada' : 'Error al actualizar',
-      result.ok ? `${result.count.toLocaleString()} jugadores disponibles.` : result.error,
-    );
+    if (result.cached) {
+      Alert.alert(
+        'BD al día',
+        `${result.count.toLocaleString()} jugadores · Actualizada ${result.label}.\n\nMantén pulsado "Actualizar BD" para forzar la descarga.`,
+      );
+    } else {
+      Alert.alert(
+        result.ok ? 'Base de datos actualizada' : 'Error al actualizar',
+        result.ok ? `${result.count.toLocaleString()} jugadores disponibles.` : result.error,
+      );
+    }
   };
+
+  const handleUpdateSquads      = () => runUpdate(false);
+  const handleForceUpdateSquads = () =>
+    Alert.alert('Forzar actualización', 'Descargar de nuevo aunque la BD esté al día?', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Descargar', onPress: () => runUpdate(true) },
+    ]);
 
   const isSlotSelected = (type, id) => selectedSlot?.type === type && selectedSlot?.id === id;
   const selectedPlayer = selectedSlot
@@ -737,7 +751,7 @@ export default function SquadBuilderScreen({ navigation }) {
           </View>
         ) : (
           <View style={styles.bottomActions}>
-            <TouchableOpacity style={styles.updateButton} onPress={handleUpdateSquads}>
+            <TouchableOpacity style={styles.updateButton} onPress={handleUpdateSquads} onLongPress={handleForceUpdateSquads}>
               <Ionicons name="cloud-download-outline" size={16} color="#fff" />
               <Text style={styles.updateButtonText}>Actualizar BD</Text>
             </TouchableOpacity>

@@ -58,6 +58,33 @@ export const initDB = () => {
         reserves TEXT DEFAULT '{}',
         FOREIGN KEY (teamId) REFERENCES teams(id)
       );
+
+      CREATE TABLE IF NOT EXISTS shortlist (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        playerName TEXT NOT NULL,
+        playerData TEXT NOT NULL,
+        status TEXT DEFAULT 'objetivo',
+        note TEXT DEFAULT '',
+        addedAt TEXT DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE IF NOT EXISTS ovr_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        playerName TEXT NOT NULL,
+        season TEXT NOT NULL,
+        overall INTEGER NOT NULL,
+        recordedAt TEXT DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE IF NOT EXISTS app_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_players_position ON players(position);
+      CREATE INDEX IF NOT EXISTS idx_players_overall  ON players(overall DESC);
+      CREATE INDEX IF NOT EXISTS idx_players_pos_ovr  ON players(position, overall DESC);
+      CREATE INDEX IF NOT EXISTS idx_players_name     ON players(name);
     `);
 
     PLAYER_MIGRATIONS.forEach((col) => {
@@ -75,9 +102,27 @@ export const initDB = () => {
 const PLAYERS_URL = process.env.EXPO_PUBLIC_PLAYERS_URL ||
   'https://raw.githubusercontent.com/Caperp22/fc26-companion/master/players.json';
 
-export const updateSquadsFromCloud = async (onProgress) => {
+export const updateSquadsFromCloud = async (onProgress, forceUpdate = false) => {
   if (!PLAYERS_URL || PLAYERS_URL.includes('TU_USUARIO')) {
     return { ok: false, error: 'URL no configurada. Edita .env con tu URL de GitHub.' };
+  }
+
+  // ── Caché: saltar descarga si la BD se actualizó hace menos de 7 días ──
+  if (!forceUpdate) {
+    try {
+      const meta = db.getFirstSync("SELECT value FROM app_meta WHERE key = 'players_last_updated'");
+      if (meta?.value) {
+        const daysSince = (Date.now() - new Date(meta.value).getTime()) / 86_400_000;
+        if (daysSince < 7) {
+          const count = getPlayerCount();
+          const label = daysSince < 1 ? 'hoy'
+            : daysSince < 2 ? 'hace 1 día'
+            : `hace ${Math.floor(daysSince)} días`;
+          onProgress?.(`BD actualizada ${label}`);
+          return { ok: true, count, cached: true, label };
+        }
+      }
+    } catch { /* meta table may not exist yet */ }
   }
 
   try {
@@ -121,6 +166,11 @@ export const updateSquadsFromCloud = async (onProgress) => {
       });
     }
 
+    db.runSync(
+      "INSERT OR REPLACE INTO app_meta (key, value) VALUES ('players_last_updated', ?)",
+      [new Date().toISOString()]
+    );
+
     return { ok: true, count: players.length };
   } catch (error) {
     console.error('updateSquadsFromCloud:', error);
@@ -139,28 +189,40 @@ export const searchPlayersWithFilters = ({
   club, league, nationality,
 }) => {
   try {
-    let query = 'SELECT * FROM players WHERE 1=1';
-    const params = [];
+    const buildBase = (words, logic = 'AND') => {
+      let q = 'SELECT * FROM players WHERE 1=1';
+      const p = [];
+      if (words.length > 0) {
+        const clauses = words.map(() => 'name LIKE ?').join(` ${logic} `);
+        q += ` AND (${clauses})`;
+        words.forEach(w => p.push(`%${w}%`));
+      }
+      if (position) {
+        q += ` AND (position = ? OR (',' || positions || ',' LIKE '%,' || ? || ',%'))`;
+        p.push(position, position);
+      }
+      if (minOverall > 0)   { q += ' AND overall >= ?';   p.push(minOverall); }
+      if (minPotential > 0) { q += ' AND potential >= ?';  p.push(minPotential); }
+      if (club?.trim())     { q += ' AND club LIKE ?';     p.push(`%${club.trim()}%`); }
+      if (league?.trim())   { q += ' AND league LIKE ?';   p.push(`%${league.trim()}%`); }
+      if (nationality?.trim()) { q += ' AND nationality LIKE ?'; p.push(`%${nationality.trim()}%`); }
+      q += ' ORDER BY overall DESC LIMIT 100';
+      return { q, p };
+    };
 
-    if (searchTerm?.trim()) {
-      query += ' AND name LIKE ?';
-      params.push(`%${searchTerm.trim()}%`);
+    const words = (searchTerm?.trim() ?? '').split(/\s+/).filter(Boolean);
+    const { q, p } = buildBase(words, 'AND');
+    const results = db.getAllSync(q, p);
+
+    // Búsqueda fuzzy: si pocos resultados con AND, intentar OR entre palabras
+    if (words.length > 1 && results.length < 5) {
+      const { q: qOr, p: pOr } = buildBase(words, 'OR');
+      const extra = db.getAllSync(qOr, pOr);
+      const seen = new Set(results.map(r => r.id));
+      extra.forEach(r => { if (!seen.has(r.id)) results.push(r); });
     }
 
-    if (position) {
-      // Busca en la posición principal Y en todas las posiciones alternativas
-      query += ` AND (position = ? OR (',' || positions || ',' LIKE '%,' || ? || ',%'))`;
-      params.push(position, position);
-    }
-
-    if (minOverall > 0) { query += ' AND overall >= ?'; params.push(minOverall); }
-    if (minPotential > 0) { query += ' AND potential >= ?'; params.push(minPotential); }
-    if (club?.trim()) { query += ' AND club LIKE ?'; params.push(`%${club.trim()}%`); }
-    if (league?.trim()) { query += ' AND league LIKE ?'; params.push(`%${league.trim()}%`); }
-    if (nationality?.trim()) { query += ' AND nationality LIKE ?'; params.push(`%${nationality.trim()}%`); }
-
-    query += ' ORDER BY overall DESC LIMIT 100';
-    return db.getAllSync(query, params);
+    return results.slice(0, 100);
   } catch (error) {
     console.error('searchPlayersWithFilters:', error);
     return [];
@@ -345,6 +407,85 @@ export const saveLineup = ({ teamId, lineupId, name, formation, squad, bench, re
 export const deleteLineup = (id) => {
   try {
     db.runSync('DELETE FROM lineups WHERE id = ?', [id]);
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+};
+
+// ─────────────────────────────────────────────────────────────
+// SHORTLIST
+// ─────────────────────────────────────────────────────────────
+
+export const getShortlist = () => {
+  try {
+    return db.getAllSync('SELECT * FROM shortlist ORDER BY addedAt DESC');
+  } catch { return []; }
+};
+
+export const isInShortlist = (playerName) => {
+  try {
+    return !!db.getFirstSync('SELECT id FROM shortlist WHERE playerName = ?', [playerName]);
+  } catch { return false; }
+};
+
+export const addToShortlist = (player) => {
+  try {
+    const existing = db.getFirstSync('SELECT id FROM shortlist WHERE playerName = ?', [player.name]);
+    if (existing) return { ok: false, error: 'Ya está en objetivos.' };
+    db.runSync(
+      'INSERT INTO shortlist (playerName, playerData) VALUES (?, ?)',
+      [player.name, JSON.stringify(player)]
+    );
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+};
+
+export const removeFromShortlist = (id) => {
+  try {
+    db.runSync('DELETE FROM shortlist WHERE id = ?', [id]);
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+};
+
+export const updateShortlistStatus = (id, status) => {
+  try {
+    db.runSync('UPDATE shortlist SET status = ? WHERE id = ?', [status, id]);
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+};
+
+export const updateShortlistNote = (id, note) => {
+  try {
+    db.runSync('UPDATE shortlist SET note = ? WHERE id = ?', [note, id]);
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+};
+
+// ─────────────────────────────────────────────────────────────
+// OVR HISTORY
+// ─────────────────────────────────────────────────────────────
+
+export const getOVRHistory = (playerName) => {
+  try {
+    return db.getAllSync(
+      'SELECT * FROM ovr_history WHERE playerName = ? ORDER BY recordedAt ASC',
+      [playerName]
+    );
+  } catch { return []; }
+};
+
+export const addOVRSnapshot = (playerName, overall, season) => {
+  try {
+    db.runSync(
+      'INSERT INTO ovr_history (playerName, overall, season) VALUES (?, ?, ?)',
+      [playerName, overall, season]
+    );
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+};
+
+export const deleteOVRSnapshot = (id) => {
+  try {
+    db.runSync('DELETE FROM ovr_history WHERE id = ?', [id]);
     return { ok: true };
   } catch (e) { return { ok: false, error: e.message }; }
 };

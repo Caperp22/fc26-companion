@@ -123,6 +123,80 @@ function CandidateRow({ player, rank, affordable, isFree, onPress }) {
 const goToDetail = (navigation, player) =>
   navigation.navigate('PlayerDetail', { player, selectionMode: false });
 
+// ─── Sección 0: Radar de profundidad por posición ──────────────
+const ALL_POSITIONS = ['GK','LB','CB','RB','LWB','RWB','CDM','CM','CAM','LM','RM','LW','RW','CF','ST'];
+
+const POS_COLOR = (pos) => {
+  if (pos === 'GK') return '#b45309';
+  if (['CB','LB','RB','LWB','RWB'].includes(pos)) return '#1d4ed8';
+  if (['CDM','CM','CAM','LM','RM'].includes(pos)) return '#6d28d9';
+  return '#b91c1c';
+};
+
+function DepthChartSection({ squad, bench, reserves }) {
+  const coverage = useMemo(() => {
+    const allPlayers = [
+      ...Object.values(squad),
+      ...Object.values(bench),
+      ...Object.values(reserves),
+    ].filter(Boolean);
+
+    const counts = {};
+    ALL_POSITIONS.forEach(pos => { counts[pos] = 0; });
+
+    allPlayers.forEach(p => {
+      const positions = (p.positions || p.position || '')
+        .split(',').map(s => s.trim()).filter(Boolean);
+      positions.forEach(pos => {
+        if (counts[pos] !== undefined) counts[pos]++;
+      });
+    });
+    return counts;
+  }, [squad, bench, reserves]);
+
+  const total = Object.values(squad).filter(Boolean).length +
+                Object.values(bench).filter(Boolean).length +
+                Object.values(reserves).filter(Boolean).length;
+
+  const weakSpots = ALL_POSITIONS.filter(p => coverage[p] < 2).length;
+
+  return (
+    <View style={s.card}>
+      <SectionHeader
+        icon="grid-outline"
+        title="Cobertura por posición"
+        subtitle={total === 0 ? 'Añade jugadores a la pizarra' : `${weakSpots} posición${weakSpots !== 1 ? 'es' : ''} con cobertura débil`}
+      />
+      <View style={s.depthGrid}>
+        {ALL_POSITIONS.map(pos => {
+          const count = coverage[pos];
+          const bg   = count === 0 ? '#3f0f0f' : count === 1 ? '#3d2f00' : '#0d2f1a';
+          const dot  = count === 0 ? '#ef4444' : count === 1 ? '#f59e0b' : '#22c55e';
+          return (
+            <View key={pos} style={[s.depthCell, { backgroundColor: bg }]}>
+              <View style={[s.depthPosBadge, { backgroundColor: POS_COLOR(pos) }]}>
+                <Text style={s.depthPosText}>{pos}</Text>
+              </View>
+              <View style={s.depthCountRow}>
+                <View style={[s.depthDot, { backgroundColor: dot }]} />
+                <Text style={[s.depthCount, { color: dot }]}>{count}</Text>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+      <View style={s.depthLegend}>
+        {[['#ef4444','Sin cobertura'],['#f59e0b','1 jugador'],['#22c55e','2+ jugadores']].map(([c, l]) => (
+          <View key={l} style={s.depthLegendItem}>
+            <View style={[s.depthDot, { backgroundColor: c }]} />
+            <Text style={s.depthLegendText}>{l}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 // ─── Sección 1: Huecos ──────────────────────────────────────────
 function GapsSection({ formation, squad, balance, navigation }) {
   const slots = FORMATIONS[formation]?.slots || [];
@@ -451,6 +525,7 @@ export default function AnalysisScreen({ navigation }) {
 
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
+      <DepthChartSection squad={squad} bench={bench} reserves={reserves} />
       <GapsSection formation={formation} squad={squad} balance={balance} navigation={navigation} />
       <BestFormationSection
         currentFormation={formation}
@@ -555,6 +630,18 @@ const s = StyleSheet.create({
   sharedDot:   { width: 6, height: 6, borderRadius: 3, backgroundColor: '#f59e0b' },
   sharedName:  { color: '#94a3b8', fontSize: 12 },
   moreText:    { color: '#475569', fontSize: 11, marginTop: 2 },
+
+  // Depth chart
+  depthGrid:       { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  depthCell:       { width: '29%', flexGrow: 1, borderRadius: 10, padding: 8, alignItems: 'center', gap: 5, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+  depthPosBadge:   { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 5 },
+  depthPosText:    { color: '#fff', fontSize: 10, fontWeight: '800' },
+  depthCountRow:   { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  depthDot:        { width: 7, height: 7, borderRadius: 4 },
+  depthCount:      { fontSize: 15, fontWeight: '900' },
+  depthLegend:     { flexDirection: 'row', gap: 14, marginTop: 12, flexWrap: 'wrap' },
+  depthLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  depthLegendText: { color: '#64748b', fontSize: 11 },
 
   exclusiveBlock:   { marginTop: 14 },
   exclusiveTitle:   { color: '#475569', fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 },

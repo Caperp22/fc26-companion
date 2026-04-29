@@ -1,6 +1,14 @@
-import { useState } from 'react';
-import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useEffect, useState } from 'react';
+import { Alert, Image, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { POSITION_BG, POSITION_ES, POSITION_FULL_ES } from '../constants/positions';
+import {
+  addOVRSnapshot,
+  addToShortlist,
+  deleteOVRSnapshot,
+  getOVRHistory,
+  isInShortlist,
+} from '../db/database';
 import { useSquadStore } from '../store/squadStore';
 
 const getOverallBg = (overall) => {
@@ -42,7 +50,49 @@ function PosBadge({ position }) {
 export default function PlayerDetailScreen({ route, navigation }) {
   const { player, selectionMode = false, slotId = null, slotLabel = '' } = route.params;
   const { setPendingPlayer, assignPlayer, assignToBench, assignToReserves } = useSquadStore();
-  const [imgError, setImgError] = useState(false);
+  const [imgError, setImgError]         = useState(false);
+  const [inShortlist, setInShortlist]   = useState(false);
+  const [ovrHistory, setOvrHistory]     = useState([]);
+  const [showOvrForm, setShowOvrForm]   = useState(false);
+  const [ovrSeason, setOvrSeason]       = useState('');
+  const [ovrValue, setOvrValue]         = useState(player.overall?.toString() ?? '');
+
+  useEffect(() => {
+    setInShortlist(isInShortlist(player.name));
+    setOvrHistory(getOVRHistory(player.name));
+  }, [player.name]);
+
+  const handleToggleShortlist = () => {
+    if (inShortlist) return;
+    const res = addToShortlist(player);
+    if (res.ok) {
+      setInShortlist(true);
+      Alert.alert('Objetivo añadido', `${player.name} se añadió a tus objetivos de fichaje.`);
+    } else {
+      Alert.alert('Aviso', res.error);
+    }
+  };
+
+  const handleAddOVR = () => {
+    const ovr = parseInt(ovrValue, 10);
+    const season = ovrSeason.trim();
+    if (!season) { Alert.alert('Error', 'Escribe la temporada (ej: T26).'); return; }
+    if (isNaN(ovr) || ovr < 1 || ovr > 99) { Alert.alert('Error', 'OVR debe ser 1-99.'); return; }
+    addOVRSnapshot(player.name, ovr, season);
+    setOvrHistory(getOVRHistory(player.name));
+    setShowOvrForm(false);
+    setOvrSeason('');
+  };
+
+  const handleDeleteOVR = (id) => {
+    Alert.alert('Eliminar entrada', '¿Borrar este registro de OVR?', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Eliminar', style: 'destructive', onPress: () => {
+        deleteOVRSnapshot(id);
+        setOvrHistory(getOVRHistory(player.name));
+      }},
+    ]);
+  };
 
   // Posiciones alternativas: "ST,CF,LW" → ['ST','CF','LW']
   const allPositions = player.positions
@@ -140,10 +190,90 @@ export default function PlayerDetailScreen({ route, navigation }) {
           <Text style={styles.actionBtnText}>Fichar para {slotLabel}</Text>
         </TouchableOpacity>
       ) : (
-        <TouchableOpacity style={styles.actionBtn} onPress={handleAddToBoard} activeOpacity={0.8}>
-          <Text style={styles.actionBtnText}>Añadir a la Pizarra</Text>
-        </TouchableOpacity>
+        <View style={styles.actionsRow}>
+          <TouchableOpacity style={[styles.actionBtn, { flex: 1 }]} onPress={handleAddToBoard} activeOpacity={0.8}>
+            <Text style={styles.actionBtnText}>Añadir a la Pizarra</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.shortlistBtn, inShortlist && styles.shortlistBtnActive]}
+            onPress={handleToggleShortlist}
+            activeOpacity={0.8}
+          >
+            <Ionicons name={inShortlist ? 'star' : 'star-outline'} size={20} color={inShortlist ? '#f59e0b' : '#64748b'} />
+          </TouchableOpacity>
+        </View>
       )}
+
+      {/* ── Historial OVR ─────────────────────────────────────── */}
+      <View style={styles.card}>
+        <View style={styles.ovrHistHeader}>
+          <Text style={styles.cardTitle}>Progresión OVR</Text>
+          <TouchableOpacity style={styles.ovrAddBtn} onPress={() => setShowOvrForm(true)}>
+            <Ionicons name="add" size={16} color="#3b82f6" />
+            <Text style={styles.ovrAddText}>Registrar</Text>
+          </TouchableOpacity>
+        </View>
+        {ovrHistory.length === 0 ? (
+          <Text style={styles.ovrEmpty}>{'Sin registros. Toca "Registrar" después de cada temporada para trackear su evolución.'}</Text>
+        ) : (
+          <View style={styles.ovrTimeline}>
+            {ovrHistory.map((entry, idx) => {
+              const prev = ovrHistory[idx - 1];
+              const diff = prev ? entry.overall - prev.overall : null;
+              return (
+                <TouchableOpacity key={entry.id} style={styles.ovrRow} onLongPress={() => handleDeleteOVR(entry.id)} activeOpacity={0.7}>
+                  <View style={styles.ovrSeasonBadge}>
+                    <Text style={styles.ovrSeasonText}>{entry.season}</Text>
+                  </View>
+                  <View style={styles.ovrBarWrap}>
+                    <View style={[styles.ovrBar, { width: `${entry.overall}%` }]} />
+                  </View>
+                  <Text style={styles.ovrValText}>{entry.overall}</Text>
+                  {diff !== null && (
+                    <Text style={[styles.ovrDiff, { color: diff > 0 ? '#22c55e' : diff < 0 ? '#ef4444' : '#64748b' }]}>
+                      {diff > 0 ? `+${diff}` : diff}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+            <Text style={styles.ovrHint}>Mantén pulsado para eliminar</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Modal añadir OVR */}
+      <Modal visible={showOvrForm} transparent animationType="fade" onRequestClose={() => setShowOvrForm(false)}>
+        <View style={styles.ovrOverlay}>
+          <View style={styles.ovrModal}>
+            <Text style={styles.ovrModalTitle}>Registrar OVR</Text>
+            <TextInput
+              style={styles.ovrInput}
+              placeholder="Temporada (ej: T26)"
+              placeholderTextColor="#475569"
+              value={ovrSeason}
+              onChangeText={setOvrSeason}
+              autoFocus
+            />
+            <TextInput
+              style={styles.ovrInput}
+              placeholder="OVR actual"
+              placeholderTextColor="#475569"
+              value={ovrValue}
+              onChangeText={setOvrValue}
+              keyboardType="numeric"
+            />
+            <View style={styles.ovrModalBtns}>
+              <TouchableOpacity style={styles.ovrCancel} onPress={() => setShowOvrForm(false)}>
+                <Text style={styles.ovrCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.ovrSave} onPress={handleAddOVR}>
+                <Text style={styles.ovrSaveText}>Guardar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -197,12 +327,45 @@ const styles = StyleSheet.create({
   infoValue: { color: '#f1f5f9', fontSize: 14, fontWeight: '600' },
   infoValueHighlight: { color: '#34d399' },
 
+  actionsRow: { flexDirection: 'row', gap: 10, marginTop: 4 },
   actionBtn: {
     backgroundColor: '#1d4ed8', paddingVertical: 15,
-    borderRadius: 14, alignItems: 'center', marginTop: 4,
+    borderRadius: 14, alignItems: 'center',
   },
   actionBtnFichar: { backgroundColor: '#16a34a' },
   actionBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  shortlistBtn: {
+    width: 52, height: 52, borderRadius: 14, justifyContent: 'center', alignItems: 'center',
+    backgroundColor: '#1e293b', borderWidth: 1, borderColor: '#334155',
+  },
+  shortlistBtnActive: { backgroundColor: '#3d2f00', borderColor: '#f59e0b44' },
+
+  // OVR History
+  ovrHistHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  ovrAddBtn:     { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: '#1e3a5f' },
+  ovrAddText:    { color: '#3b82f6', fontSize: 12, fontWeight: '700' },
+  ovrEmpty:      { color: '#475569', fontSize: 13, lineHeight: 20 },
+  ovrTimeline:   { gap: 8 },
+  ovrRow:        { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  ovrSeasonBadge: { backgroundColor: '#0f172a', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, minWidth: 40, alignItems: 'center' },
+  ovrSeasonText: { color: '#94a3b8', fontSize: 11, fontWeight: '700' },
+  ovrBarWrap:    { flex: 1, height: 6, backgroundColor: '#0f172a', borderRadius: 3, overflow: 'hidden' },
+  ovrBar:        { height: '100%', backgroundColor: '#3b82f6', borderRadius: 3 },
+  ovrValText:    { color: '#f1f5f9', fontWeight: '800', fontSize: 14, width: 26, textAlign: 'right' },
+  ovrDiff:       { fontSize: 11, fontWeight: '700', width: 28, textAlign: 'right' },
+  ovrHint:       { color: '#334155', fontSize: 10, textAlign: 'center', marginTop: 4 },
+  ovrOverlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: 24 },
+  ovrModal:      { backgroundColor: '#1e293b', borderRadius: 16, padding: 20, gap: 12 },
+  ovrModalTitle: { color: '#f1f5f9', fontSize: 16, fontWeight: '700' },
+  ovrInput: {
+    backgroundColor: '#0f172a', borderRadius: 10, paddingHorizontal: 14, height: 44,
+    color: '#f1f5f9', fontSize: 15, borderWidth: 1, borderColor: '#334155',
+  },
+  ovrModalBtns:  { flexDirection: 'row', gap: 10 },
+  ovrCancel:     { flex: 1, padding: 12, borderRadius: 10, backgroundColor: '#0f172a', alignItems: 'center', borderWidth: 1, borderColor: '#334155' },
+  ovrCancelText: { color: '#64748b', fontWeight: '600' },
+  ovrSave:       { flex: 1, padding: 12, borderRadius: 10, backgroundColor: '#3b82f6', alignItems: 'center' },
+  ovrSaveText:   { color: '#fff', fontWeight: '700' },
 });
 
 const statBar = StyleSheet.create({
