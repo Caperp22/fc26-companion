@@ -448,8 +448,10 @@ def main():
 
             if new_in_page == 0:
                 consec_no_new += 1
-                if consec_no_new >= 4:
-                    print("  [listado] 4 paginas sin nuevos - fin.")
+                # Si ya tenemos muchos jugadores conocidos necesitamos escanear más
+                limit = 8 if len(known_names) > 10000 else 4
+                if consec_no_new >= limit:
+                    print(f"  [listado] {limit} paginas sin nuevos - fin.")
                     break
             else:
                 consec_no_new = 0
@@ -464,7 +466,6 @@ def main():
             page += 1
             time.sleep(random.uniform(1.0, 2.0))
 
-        listing_done.set()
         print(f"\n  [listado] Completado: {found} jugadores nuevos encontrados")
 
     if not args.full and len(known_names) > 0:
