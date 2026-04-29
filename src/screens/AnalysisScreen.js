@@ -4,10 +4,17 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import { FORMATIONS } from '../constants/formations';
-import { getLineupsByTeam, getTopPlayersByPosition } from '../db/database';
+import {
+  getAffordablePlayersByPosition,
+  getFreeAgentCandidates,
+  getLineupsByTeam,
+  getTopPlayersByPosition,
+} from '../db/database';
+import { useBudgetStore } from '../store/budgetStore';
 import { useSquadStore } from '../store/squadStore';
 
 // ─── Compatibilidad de posición ─────────────────────────────────
@@ -87,18 +94,53 @@ function TipBox({ text }) {
   );
 }
 
+const fmtVal = (v) => {
+  if (!v || v === 0) return 'LIBRE';
+  if (v >= 1_000_000) return `€${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000) return `€${Math.round(v / 1_000)}K`;
+  return `€${v}`;
+};
+
+function CandidateRow({ player, rank, affordable, isFree, onPress }) {
+  return (
+    <TouchableOpacity style={s.candidateRow} onPress={onPress} activeOpacity={0.7}>
+      <Text style={s.candidateRank}>#{rank}</Text>
+      <View style={{ flex: 1 }}>
+        <Text style={s.candidateName} numberOfLines={1}>{player.name}</Text>
+        <Text style={s.candidateClub} numberOfLines={1}>{player.club}</Text>
+      </View>
+      <View style={[s.priceBadge, isFree && s.priceFree, !affordable && !isFree && s.priceOver]}>
+        <Text style={[s.priceText, isFree && s.priceFreeText, !affordable && !isFree && s.priceOverText]}>
+          {fmtVal(player.marketValue)}
+        </Text>
+      </View>
+      <OvrBadge ovr={player.overall} />
+      <Ionicons name="chevron-forward" size={13} color="#334155" />
+    </TouchableOpacity>
+  );
+}
+
+const goToDetail = (navigation, player) =>
+  navigation.navigate('PlayerDetail', { player, selectionMode: false });
+
 // ─── Sección 1: Huecos ──────────────────────────────────────────
-function GapsSection({ formation, squad }) {
+function GapsSection({ formation, squad, balance, navigation }) {
   const slots = FORMATIONS[formation]?.slots || [];
   const emptySlots = slots.filter(sl => !squad[sl.id]);
   const missingPos = [...new Set(emptySlots.map(sl => sl.position))];
 
   const suggestions = useMemo(() => {
     const out = {};
-    missingPos.forEach(pos => { out[pos] = getTopPlayersByPosition(pos, 3); });
+    missingPos.forEach(pos => {
+      out[pos] = {
+        affordable: getAffordablePlayersByPosition(pos, balance, 4),
+        free:       getFreeAgentCandidates(pos, 3),
+        best:       getTopPlayersByPosition(pos, 3),
+      };
+    });
     return out;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [missingPos.join(',')]);
+  }, [missingPos.join(','), balance]);
 
   const subtitle = emptySlots.length === 0
     ? null
@@ -108,6 +150,15 @@ function GapsSection({ formation, squad }) {
     <View style={s.card}>
       <SectionHeader icon="alert-circle-outline" title="Huecos del equipo" subtitle={subtitle} />
 
+      {/* Balance disponible */}
+      <View style={s.balanceRow}>
+        <Ionicons name="wallet-outline" size={14} color="#64748b" />
+        <Text style={s.balanceLabel}>Presupuesto disponible: </Text>
+        <Text style={[s.balanceValue, balance <= 0 && { color: '#ef4444' }]}>
+          {fmtVal(balance)}
+        </Text>
+      </View>
+
       {emptySlots.length === 0 ? (
         <View style={s.successRow}>
           <Ionicons name="checkmark-circle" size={20} color="#22c55e" />
@@ -115,8 +166,9 @@ function GapsSection({ formation, squad }) {
         </View>
       ) : (
         missingPos.map(pos => {
-          const slotsForPos = emptySlots.filter(sl => sl.position === pos);
-          const candidates  = suggestions[pos] || [];
+          const slotsForPos  = emptySlots.filter(sl => sl.position === pos);
+          const { affordable, free, best } = suggestions[pos] || {};
+
           return (
             <View key={pos} style={s.gapBlock}>
               <View style={s.gapLabelRow}>
@@ -124,22 +176,49 @@ function GapsSection({ formation, squad }) {
                   <Text style={s.posText}>{slotsForPos[0]?.label ?? pos}</Text>
                 </View>
                 <Text style={s.gapPosName}>{pos}</Text>
-                {slotsForPos.length > 1 && (
-                  <Text style={s.gapCount}>× {slotsForPos.length}</Text>
-                )}
+                {slotsForPos.length > 1 && <Text style={s.gapCount}>× {slotsForPos.length}</Text>}
               </View>
 
-              {candidates.length === 0 ? (
-                <Text style={s.emptyHint}>Sin jugadores en la BD para esta posición.</Text>
+              {/* Dentro del presupuesto */}
+              {affordable?.length > 0 ? (
+                <>
+                  <Text style={s.subheading}>Dentro de presupuesto</Text>
+                  {affordable.map((p, i) => (
+                    <CandidateRow key={p.id} player={p} rank={i + 1} affordable isFree={p.marketValue === 0}
+                      onPress={() => goToDetail(navigation, p)} />
+                  ))}
+                </>
               ) : (
-                candidates.map((p, i) => (
-                  <View key={p.id} style={s.candidateRow}>
-                    <Text style={s.candidateRank}>#{i + 1}</Text>
-                    <Text style={s.candidateName} numberOfLines={1}>{p.name}</Text>
-                    <Text style={s.candidateClub} numberOfLines={1}>{p.club}</Text>
-                    <OvrBadge ovr={p.overall} />
-                  </View>
-                ))
+                <View style={s.noAffordRow}>
+                  <Ionicons name="close-circle-outline" size={14} color="#ef4444" />
+                  <Text style={s.noAffordText}>
+                    {balance <= 0
+                      ? 'Sin presupuesto disponible.'
+                      : 'No hay candidatos dentro del presupuesto actual.'}
+                  </Text>
+                </View>
+              )}
+
+              {/* Agentes libres */}
+              {free?.length > 0 && (
+                <>
+                  <Text style={[s.subheading, { color: '#22c55e', marginTop: 10 }]}>Agentes libres / sin coste</Text>
+                  {free.map((p, i) => (
+                    <CandidateRow key={p.id} player={p} rank={i + 1} affordable isFree
+                      onPress={() => goToDetail(navigation, p)} />
+                  ))}
+                </>
+              )}
+
+              {/* Mejores sin filtro (referencia) */}
+              {affordable?.length === 0 && best?.length > 0 && (
+                <>
+                  <Text style={[s.subheading, { marginTop: 10 }]}>Mejores disponibles (referencia)</Text>
+                  {best.map((p, i) => (
+                    <CandidateRow key={p.id} player={p} rank={i + 1} affordable={false} isFree={false}
+                      onPress={() => goToDetail(navigation, p)} />
+                  ))}
+                </>
               )}
             </View>
           );
@@ -365,10 +444,14 @@ function RotationsSection({ loadedTeamId, loadedTeamName, navigation }) {
 // ─── Main ────────────────────────────────────────────────────────
 export default function AnalysisScreen({ navigation }) {
   const { formation, squad, bench, reserves, loadedTeamId, loadedTeamName } = useSquadStore();
+  const { budget, transactions } = useBudgetStore();
+  const totalSpent  = transactions.filter(t => t.type === 'compra').reduce((s, t) => s + t.amount, 0);
+  const totalEarned = transactions.filter(t => t.type === 'venta').reduce((s, t) => s + t.amount, 0);
+  const balance     = budget + totalEarned - totalSpent;
 
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
-      <GapsSection formation={formation} squad={squad} />
+      <GapsSection formation={formation} squad={squad} balance={balance} navigation={navigation} />
       <BestFormationSection
         currentFormation={formation}
         squad={squad}
@@ -410,12 +493,27 @@ const s = StyleSheet.create({
   posText:     { color: '#fff', fontSize: 11, fontWeight: '800' },
   gapPosName:  { color: '#64748b', fontSize: 12 },
   gapCount:    { color: '#475569', fontSize: 11 },
-  candidateRow:  { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: '#0f172a' },
+  balanceRow:   { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 12, padding: 10, backgroundColor: '#0f172a', borderRadius: 8 },
+  balanceLabel: { color: '#64748b', fontSize: 12 },
+  balanceValue: { color: '#22c55e', fontSize: 12, fontWeight: '700' },
+
+  subheading: { color: '#475569', fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 5, marginTop: 2 },
+  noAffordRow:  { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6 },
+  noAffordText: { color: '#64748b', fontSize: 12, flex: 1 },
+
+  candidateRow:  { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#0f172a' },
   candidateRank: { color: '#475569', fontSize: 11, width: 22 },
-  candidateName: { color: '#cbd5e1', fontSize: 13, fontWeight: '600', flex: 1 },
-  candidateClub: { color: '#475569', fontSize: 11, flex: 1, textAlign: 'right' },
+  candidateName: { color: '#cbd5e1', fontSize: 13, fontWeight: '600' },
+  candidateClub: { color: '#475569', fontSize: 10 },
   ovrBadge:      { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 },
   ovrText:       { color: '#fff', fontSize: 11, fontWeight: '800' },
+
+  priceBadge:    { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, backgroundColor: '#1e3a5f', marginRight: 4 },
+  priceText:     { color: '#60a5fa', fontSize: 10, fontWeight: '700' },
+  priceFree:     { backgroundColor: '#14532d' },
+  priceFreeText: { color: '#4ade80' },
+  priceOver:     { backgroundColor: '#3f1111' },
+  priceOverText: { color: '#f87171' },
 
   // Best formation
   formRow:     { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#0f172a' },

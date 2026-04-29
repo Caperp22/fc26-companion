@@ -338,10 +338,16 @@ def scrape(session, max_players=None, resume=False):
     offset  = state["offset"]
     players = list(state["players"])
 
-    if resume and players:
-        print(f"[>] Reanudando desde offset={offset} ({len(players)} jugadores guardados).")
+    # Deduplicación en tiempo real: solo guardamos jugadores nuevos.
+    # Sofifa cicla las páginas al llegar al final → sin este control
+    # el scraper repetiría indefinidamente los mismos jugadores.
+    seen_names = {p["name"].lower() for p in players}
 
-    consecutive_empty = 0
+    if resume and players:
+        print(f"[>] Reanudando desde offset={offset} ({len(players)} jugadores únicos guardados).")
+
+    consecutive_empty  = 0
+    consecutive_no_new = 0   # páginas seguidas sin ningún jugador nuevo
 
     while True:
         if max_players and len(players) >= max_players:
@@ -349,7 +355,7 @@ def scrape(session, max_players=None, resume=False):
             break
 
         url = LIST_URL_TPL.format(offset=offset)
-        print(f"[>] offset={offset:>6}  |  total={len(players):>5}", end="", flush=True)
+        print(f"[>] offset={offset:>6}  |  únicos={len(players):>5}", end="", flush=True)
 
         html = fetch_page(session, url)
         if html is None:
@@ -361,14 +367,28 @@ def scrape(session, max_players=None, resume=False):
 
         if not page_players:
             consecutive_empty += 1
+            consecutive_no_new += 1
             print("  ← sin jugadores.")
-            if consecutive_empty >= 2 or not has_next_page(html):
-                print("    Fin del listado.")
-                break
         else:
             consecutive_empty = 0
-            players.extend(page_players)
-            print(f"  +{len(page_players)}")
+            new = [p for p in page_players if p["name"].lower() not in seen_names]
+            if new:
+                consecutive_no_new = 0
+                players.extend(new)
+                seen_names.update(p["name"].lower() for p in new)
+                print(f"  +{len(new)} nuevos  (página: {len(page_players)})")
+            else:
+                consecutive_no_new += 1
+                print(f"  = 0 nuevos (página: {len(page_players)} ya vistos)")
+
+        # Para cuando sofifa repite páginas al llegar al final del listado
+        if consecutive_no_new >= 5:
+            print("    5 páginas seguidas sin jugadores nuevos → fin real del listado.")
+            break
+
+        if consecutive_empty >= 2:
+            print("    Fin del listado (páginas vacías).")
+            break
 
         offset += PAGE_SIZE
 

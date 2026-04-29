@@ -224,6 +224,30 @@ export const getTopPlayersByPosition = (position, limit = 3) => {
   } catch { return []; }
 };
 
+export const getAffordablePlayersByPosition = (position, maxBudget, limit = 3) => {
+  try {
+    return db.getAllSync(
+      `SELECT * FROM players
+       WHERE (position = ? OR (',' || positions || ',' LIKE '%,' || ? || ',%'))
+         AND marketValue <= ?
+       ORDER BY overall DESC LIMIT ?`,
+      [position, position, maxBudget, limit]
+    );
+  } catch { return []; }
+};
+
+export const getFreeAgentCandidates = (position, limit = 3) => {
+  try {
+    return db.getAllSync(
+      `SELECT * FROM players
+       WHERE (position = ? OR (',' || positions || ',' LIKE '%,' || ? || ',%'))
+         AND (marketValue = 0 OR marketValue <= 500000)
+       ORDER BY overall DESC LIMIT ?`,
+      [position, position, limit]
+    );
+  } catch { return []; }
+};
+
 export const getPlayersByFilter = ({ club, nationality, limit = 200 }) => {
   try {
     let query = 'SELECT * FROM players WHERE 1=1';

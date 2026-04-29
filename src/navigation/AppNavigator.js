@@ -11,8 +11,9 @@ import SquadBuilderScreen from '../screens/SquadBuilderScreen';
 import TeamsScreen from '../screens/TeamsScreen';
 
 const Tab = createBottomTabNavigator();
-const SquadStack = createNativeStackNavigator();
-const LeaguesStack = createNativeStackNavigator();
+const SquadStack    = createNativeStackNavigator();
+const LeaguesStack  = createNativeStackNavigator();
+const AnalysisStack = createNativeStackNavigator();
 
 const HEADER = {
   headerStyle: { backgroundColor: '#0f172a' },
@@ -64,6 +65,23 @@ function LeaguesStackNavigator() {
   );
 }
 
+function AnalysisStackNavigator() {
+  return (
+    <AnalysisStack.Navigator screenOptions={HEADER}>
+      <AnalysisStack.Screen
+        name="Analysis"
+        component={AnalysisScreen}
+        options={{ title: 'Análisis' }}
+      />
+      <AnalysisStack.Screen
+        name="PlayerDetail"
+        component={PlayerDetailScreen}
+        options={{ title: 'Ficha del Jugador' }}
+      />
+    </AnalysisStack.Navigator>
+  );
+}
+
 export default function AppNavigator() {
   return (
     <Tab.Navigator
@@ -105,8 +123,8 @@ export default function AppNavigator() {
       />
       <Tab.Screen
         name="Analisis"
-        component={AnalysisScreen}
-        options={{ title: 'Análisis', tabBarLabel: 'Análisis' }}
+        component={AnalysisStackNavigator}
+        options={{ headerShown: false, tabBarLabel: 'Análisis' }}
       />
     </Tab.Navigator>
   );
