@@ -17,6 +17,7 @@ import {
 import { FORMATIONS } from '../constants/formations';
 import {
   createTeam,
+  getLineupsByTeam,
   getTeams,
   saveLineup,
   updateSquadsFromCloud,
@@ -243,13 +244,14 @@ export default function SquadBuilderScreen({ navigation }) {
     assignToReserves, removeFromReserves,
     pendingPlayer, clearPendingPlayer,
     loadedTeamId, loadedLineupId, loadedTeamName, loadedLineupName,
-    setLoadedIds, newLineup,
+    setLoadedIds, newLineup, loadLineup,
   } = useSquadStore();
 
   const [isUpdating, setIsUpdating]       = useState(false);
   const [updateProgress, setUpdateProgress] = useState('');
   const [showSaveModal, setShowSaveModal]  = useState(false);
   const [selectedSlot, setSelectedSlot]   = useState(null);
+  const [teamLineups, setTeamLineups]     = useState([]);
 
   const { width: screenWidth } = useWindowDimensions();
 
@@ -263,6 +265,29 @@ export default function SquadBuilderScreen({ navigation }) {
   const currentSlots = FORMATIONS[formation]?.slots || [];
   const filledCount  = Object.keys(squad).length;
   const benchCount   = Object.keys(bench).length;
+
+  // ── Cargar alineaciones del equipo cuando cambia el equipo/lineup ──
+  useEffect(() => {
+    if (loadedTeamId) {
+      setTeamLineups(getLineupsByTeam(loadedTeamId));
+    } else {
+      setTeamLineups([]);
+    }
+  }, [loadedTeamId, loadedLineupId]);
+
+  const handleLineupTabPress = (lineup) => {
+    if (lineup.id === loadedLineupId) return;
+    loadLineup({
+      teamId:      loadedTeamId,
+      teamName:    loadedTeamName,
+      lineupId:    lineup.id,
+      lineupName:  lineup.name,
+      formation:   lineup.formation,
+      squad:       lineup.squad,
+      bench:       lineup.bench,
+      reserves:    lineup.reserves,
+    });
+  };
 
   // ── Header ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -485,6 +510,23 @@ export default function SquadBuilderScreen({ navigation }) {
         ))}
       </ScrollView>
 
+      {/* ── Tabs de alineación (solo si hay 2+) ───────────────── */}
+      {teamLineups.length >= 2 && (
+        <View style={styles.lineupTabsRow}>
+          {teamLineups.map((l) => (
+            <TouchableOpacity
+              key={l.id}
+              style={[styles.lineupTab, loadedLineupId === l.id && styles.lineupTabActive]}
+              onPress={() => handleLineupTabPress(l)}
+            >
+              <Text style={[styles.lineupTabText, loadedLineupId === l.id && styles.lineupTabTextActive]}>
+                {l.name}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
       {/* ── Pitch + suplentes + reservas ───────────────────────── */}
       <ScrollView
         style={styles.scrollFlex}
@@ -675,6 +717,18 @@ const styles = StyleSheet.create({
   formationChipActive:     { backgroundColor: '#1d4ed8', borderColor: '#1d4ed8' },
   formationChipText:       { color: '#94a3b8', fontWeight: '700', fontSize: 12 },
   formationChipTextActive: { color: '#fff' },
+
+  lineupTabsRow: {
+    flexDirection: 'row', backgroundColor: '#0f172a',
+    borderBottomWidth: 1, borderBottomColor: '#1e293b',
+  },
+  lineupTab: {
+    flex: 1, paddingVertical: 10, alignItems: 'center',
+    borderBottomWidth: 2, borderBottomColor: 'transparent',
+  },
+  lineupTabActive:     { borderBottomColor: '#3b82f6' },
+  lineupTabText:       { color: '#475569', fontSize: 13, fontWeight: '600' },
+  lineupTabTextActive: { color: '#f1f5f9' },
 
   scrollFlex:  { flex: 1 },
   pitchScroll: { paddingVertical: 12 },
