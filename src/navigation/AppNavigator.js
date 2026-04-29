@@ -5,11 +5,12 @@ import BudgetScreen from '../screens/BudgetScreen';
 import PlayerDetailScreen from '../screens/PlayerDetailScreen';
 import ScoutingScreen from '../screens/ScoutingScreen';
 import SquadBuilderScreen from '../screens/SquadBuilderScreen';
+import TeamsScreen from '../screens/TeamsScreen';
 
 const Tab = createBottomTabNavigator();
 const SquadStack = createNativeStackNavigator();
 
-const STACK_HEADER = {
+const HEADER = {
   headerStyle: { backgroundColor: '#0f172a' },
   headerTintColor: '#f1f5f9',
   headerShadowVisible: false,
@@ -17,11 +18,16 @@ const STACK_HEADER = {
 
 function SquadStackNavigator() {
   return (
-    <SquadStack.Navigator screenOptions={STACK_HEADER}>
+    <SquadStack.Navigator screenOptions={HEADER}>
       <SquadStack.Screen
         name="SquadBuilder"
         component={SquadBuilderScreen}
-        options={{ headerShown: false }}
+        options={{ title: 'Mi Pizarra' }}
+      />
+      <SquadStack.Screen
+        name="Teams"
+        component={TeamsScreen}
+        options={{ title: 'Mis Equipos' }}
       />
       <SquadStack.Screen
         name="Scouting"
