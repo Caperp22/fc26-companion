@@ -1,5 +1,6 @@
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -22,14 +23,26 @@ import {
 } from '../db/database';
 import { useSquadStore } from '../store/squadStore';
 
-const SLOT_SIZE = 56;
-const BENCH_SLOTS  = Array.from({ length: 7 }, (_, i) => ({ id: `B${i}`, label: `SUP ${i + 1}` }));
+// ─── Constantes ────────────────────────────────────────────────
+const SLOT_SIZE     = 60;
+const FACE_SIZE     = SLOT_SIZE - 6;   // imagen dentro del círculo
+const BENCH_SLOTS   = Array.from({ length: 7 }, (_, i) => ({ id: `B${i}`, label: `SUP ${i + 1}` }));
 const RESERVE_SLOTS = Array.from({ length: 5 }, (_, i) => ({ id: `R${i}`, label: `RES ${i + 1}` }));
+
+// Orden de formaciones: 3 atrás → 4 atrás → 5 atrás
+const FORMATION_ORDER = [
+  '3-4-3', '3-5-2',
+  '4-3-3', '4-3-3 (A)', '4-3-3 (D)',
+  '4-4-2', '4-4-2 ♦',
+  '4-2-3-1', '4-5-1',
+  '4-1-4-1', '4-1-2-1-2', '4-3-1-2', '4-1-3-2',
+  '5-3-2', '5-4-1',
+];
 
 const getSlotBorderColor = (pos) => {
   if (pos === 'GK') return '#f59e0b';
-  if (['CB','LB','RB','LWB','RWB'].includes(pos)) return '#3b82f6';
-  if (['CDM','CM','CAM','LM','RM'].includes(pos)) return '#8b5cf6';
+  if (['CB', 'LB', 'RB', 'LWB', 'RWB'].includes(pos)) return '#3b82f6';
+  if (['CDM', 'CM', 'CAM', 'LM', 'RM'].includes(pos)) return '#8b5cf6';
   return '#ef4444';
 };
 
@@ -39,11 +52,42 @@ const getOverallBg = (overall) => {
   return '#4b5563';
 };
 
-// ─── Bench card ────────────────────────────────────────────────
-function BenchCard({ slotId, label, player, pendingPlayer, onPress, onLongPress }) {
+// ─── Foto del jugador en el slot ───────────────────────────────
+function SlotPlayer({ player }) {
+  const [imgError, setImgError] = useState(false);
+  if (player.faceUrl && !imgError) {
+    return (
+      <Image
+        source={{ uri: player.faceUrl }}
+        style={{ width: FACE_SIZE, height: FACE_SIZE, borderRadius: FACE_SIZE / 2 }}
+        contentFit="cover"
+        onError={() => setImgError(true)}
+      />
+    );
+  }
+  return (
+    <Text style={styles.slotInitial}>
+      {player.name?.[0]?.toUpperCase() ?? '?'}
+    </Text>
+  );
+}
+
+const chunkArray = (arr, size) => {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+};
+
+// ─── Bench / Reserve card ───────────────────────────────────────
+function BenchCard({ label, player, pendingPlayer, isSelected, onPress, onLongPress, style }) {
   return (
     <TouchableOpacity
-      style={[styles.benchCard, player && { backgroundColor: getOverallBg(player.overall), borderColor: 'transparent' }]}
+      style={[
+        styles.benchCard,
+        player && { backgroundColor: getOverallBg(player.overall), borderColor: 'transparent' },
+        isSelected && styles.benchCardSelected,
+        style,
+      ]}
       onPress={onPress}
       onLongPress={onLongPress}
       activeOpacity={0.75}
@@ -56,7 +100,7 @@ function BenchCard({ slotId, label, player, pendingPlayer, onPress, onLongPress 
         </>
       ) : (
         <>
-          <Text style={styles.benchEmptyIcon}>{pendingPlayer ? '+' : '·'}</Text>
+          <Text style={styles.benchEmptyIcon}>{pendingPlayer || isSelected ? '+' : '·'}</Text>
           <Text style={styles.benchEmptyLabel}>{label}</Text>
         </>
       )}
@@ -64,13 +108,17 @@ function BenchCard({ slotId, label, player, pendingPlayer, onPress, onLongPress 
   );
 }
 
-// ─── Save Modal ────────────────────────────────────────────────
-function SaveModal({ visible, onClose, onSaved, currentFormation, currentSquad, currentBench, currentReserves, loadedTeamId, loadedTeamName, loadedLineupId, loadedLineupName }) {
-  const [teams, setTeams] = useState([]);
+// ─── Save Modal ─────────────────────────────────────────────────
+function SaveModal({
+  visible, onClose, onSaved,
+  currentFormation, currentSquad, currentBench, currentReserves,
+  loadedTeamId, loadedTeamName, loadedLineupId, loadedLineupName,
+}) {
+  const [teams, setTeams]               = useState([]);
   const [selectedTeamId, setSelectedTeamId] = useState(null);
-  const [newTeamName, setNewTeamName] = useState('');
-  const [lineupName, setLineupName] = useState('');
-  const [createNew, setCreateNew] = useState(false);
+  const [newTeamName, setNewTeamName]   = useState('');
+  const [lineupName, setLineupName]     = useState('');
+  const [createNew, setCreateNew]       = useState(false);
 
   useEffect(() => {
     if (visible) {
@@ -91,15 +139,14 @@ function SaveModal({ visible, onClose, onSaved, currentFormation, currentSquad, 
 
   const handleSave = () => {
     const lName = lineupName.trim() || 'Titular';
-
-    let teamId = selectedTeamId;
+    let teamId   = selectedTeamId;
     let teamName = teams.find((t) => t.id === teamId)?.name || '';
 
     if (createNew) {
       if (!newTeamName.trim()) { Alert.alert('Error', 'Escribe el nombre del equipo.'); return; }
       const res = createTeam(newTeamName.trim());
       if (!res.ok) { Alert.alert('Error', res.error); return; }
-      teamId = res.id;
+      teamId   = res.id;
       teamName = newTeamName.trim();
     }
 
@@ -108,19 +155,15 @@ function SaveModal({ visible, onClose, onSaved, currentFormation, currentSquad, 
     const result = saveLineup({
       teamId,
       lineupId: loadedTeamId === teamId ? loadedLineupId : null,
-      name: lName,
+      name:     lName,
       formation: currentFormation,
-      squad: currentSquad,
-      bench: currentBench,
+      squad:    currentSquad,
+      bench:    currentBench,
       reserves: currentReserves,
     });
 
-    if (result.ok) {
-      onSaved(teamId, teamName, result.id, lName);
-      onClose();
-    } else {
-      Alert.alert('Error', result.error);
-    }
+    if (result.ok) { onSaved(teamId, teamName, result.id, lName); onClose(); }
+    else           { Alert.alert('Error', result.error); }
   };
 
   return (
@@ -129,9 +172,8 @@ function SaveModal({ visible, onClose, onSaved, currentFormation, currentSquad, 
         <View style={saveModal.sheet}>
           <Text style={saveModal.title}>Guardar alineación</Text>
 
-          {/* Equipo */}
           <Text style={saveModal.label}>Equipo</Text>
-          {!createNew && teams.length > 0 ? (
+          {!createNew && teams.length > 0 && (
             <FlatList
               data={teams}
               horizontal
@@ -149,7 +191,7 @@ function SaveModal({ visible, onClose, onSaved, currentFormation, currentSquad, 
                 </TouchableOpacity>
               )}
             />
-          ) : null}
+          )}
 
           <TouchableOpacity
             style={saveModal.toggleNew}
@@ -169,7 +211,6 @@ function SaveModal({ visible, onClose, onSaved, currentFormation, currentSquad, 
             />
           )}
 
-          {/* Nombre alineación */}
           <Text style={[saveModal.label, { marginTop: 14 }]}>Nombre de la alineación</Text>
           <TextInput
             style={saveModal.input}
@@ -193,7 +234,7 @@ function SaveModal({ visible, onClose, onSaved, currentFormation, currentSquad, 
   );
 }
 
-// ─── Main Screen ────────────────────────────────────────────────
+// ─── Main Screen ─────────────────────────────────────────────────
 export default function SquadBuilderScreen({ navigation }) {
   const {
     formation, squad, bench, reserves,
@@ -205,20 +246,25 @@ export default function SquadBuilderScreen({ navigation }) {
     setLoadedIds, newLineup,
   } = useSquadStore();
 
-  const [isUpdating, setIsUpdating] = useState(false);
+  const [isUpdating, setIsUpdating]       = useState(false);
   const [updateProgress, setUpdateProgress] = useState('');
-  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [showSaveModal, setShowSaveModal]  = useState(false);
+  const [selectedSlot, setSelectedSlot]   = useState(null);
+
   const { width: screenWidth } = useWindowDimensions();
 
-
-  const PITCH_W = screenWidth - 24;
-  const PITCH_H = Math.round(PITCH_W * 1.48);
+  // Pitch deja margen lateral de SLOT_SIZE/2 a cada lado para que
+  // los slots extremos (RWB x=0.92, LWB x=0.08) nunca queden fuera
+  // de los bounds del contenedor → Android entrega el touch event.
+  const PITCH_W    = screenWidth - SLOT_SIZE * 2;
+  const PITCH_H    = Math.round(PITCH_W * 1.52);
+  const CENTER_OFF = (screenWidth - PITCH_W) / 2;   // = SLOT_SIZE = 60
 
   const currentSlots = FORMATIONS[formation]?.slots || [];
-  const filledCount = Object.keys(squad).length;
-  const benchCount = Object.keys(bench).length;
+  const filledCount  = Object.keys(squad).length;
+  const benchCount   = Object.keys(bench).length;
 
-  // Botón guardar en header
+  // ── Header ─────────────────────────────────────────────────────
   useEffect(() => {
     navigation.setOptions({
       headerRight: () => (
@@ -238,40 +284,110 @@ export default function SquadBuilderScreen({ navigation }) {
       headerStyle: { backgroundColor: '#0f172a' },
       headerShadowVisible: false,
     });
-  }, [loadedTeamName, loadedLineupName]);
+  }, [navigation, loadedTeamName, loadedLineupName]);
 
+  // ── Navegación a scouting ───────────────────────────────────────
   const navigateToScouting = (slotId, slotLabel, slotPosition) =>
     navigation.navigate('Scouting', { selectionMode: true, slotId, slotLabel, slotPosition });
 
+  // ── Swap entre cualquier tipo de slot ──────────────────────────
+  const swapPlayers = (from, to) => {
+    const getPlayer = ({ type, id }) => {
+      if (type === 'main')     return squad[id];
+      if (type === 'bench')    return bench[id];
+      if (type === 'reserves') return reserves[id];
+    };
+    const setPlayer = ({ type, id }, player) => {
+      if (!player) {
+        if (type === 'main')     removePlayer(id);
+        if (type === 'bench')    removeFromBench(id);
+        if (type === 'reserves') removeFromReserves(id);
+      } else {
+        if (type === 'main')     assignPlayer(id, player);
+        if (type === 'bench')    assignToBench(id, player);
+        if (type === 'reserves') assignToReserves(id, player);
+      }
+    };
+    const fromPlayer = getPlayer(from);
+    const toPlayer   = getPlayer(to);
+    setPlayer(to, fromPlayer);
+    setPlayer(from, toPlayer ?? null);
+  };
+
+  // ── Handlers titulares ─────────────────────────────────────────
   const handleSlotPress = (slot) => {
-    if (pendingPlayer) { assignPlayer(slot.id, pendingPlayer); return; }
-    navigateToScouting(slot.id, slot.label, slot.position);
+    if (pendingPlayer) {
+      assignPlayer(slot.id, pendingPlayer);
+      clearPendingPlayer();
+      return;
+    }
+    if (selectedSlot) {
+      if (selectedSlot.type === 'main' && selectedSlot.id === slot.id) {
+        setSelectedSlot(null);
+      } else {
+        swapPlayers(selectedSlot, { type: 'main', id: slot.id });
+        setSelectedSlot(null);
+      }
+      return;
+    }
+    const player = squad[slot.id];
+    if (player) {
+      setSelectedSlot({ type: 'main', id: slot.id });
+    } else {
+      navigateToScouting(slot.id, slot.label, slot.position);
+    }
   };
 
   const handleSlotLongPress = (slot) => {
+    setSelectedSlot(null);
     const player = squad[slot.id];
-    if (!player) { handleSlotPress(slot); return; }
+    if (!player) { navigateToScouting(slot.id, slot.label, slot.position); return; }
     Alert.alert(player.name, `GRL ${player.overall}  •  ${player.position}`, [
       { text: 'Cancelar', style: 'cancel' },
-      { text: 'Cambiar', onPress: () => navigateToScouting(slot.id, slot.label, slot.position) },
-      { text: 'Quitar', style: 'destructive', onPress: () => removePlayer(slot.id) },
+      { text: 'Cambiar',  onPress: () => navigateToScouting(slot.id, slot.label, slot.position) },
+      { text: 'Quitar',   style: 'destructive', onPress: () => removePlayer(slot.id) },
     ]);
   };
 
-  const handleBenchPress = (slotId, label, assignFn) => {
-    if (pendingPlayer) { assignFn(slotId, pendingPlayer); return; }
-    navigateToScouting(slotId, label, null);
+  // ── Handlers banco / reservas ───────────────────────────────────
+  const handleBenchPress = (slotId, label, type) => {
+    const player   = type === 'bench' ? bench[slotId] : reserves[slotId];
+    const assignFn = type === 'bench' ? assignToBench : assignToReserves;
+
+    if (pendingPlayer) {
+      assignFn(slotId, pendingPlayer);
+      clearPendingPlayer();
+      return;
+    }
+    if (selectedSlot) {
+      if (selectedSlot.type === type && selectedSlot.id === slotId) {
+        setSelectedSlot(null);
+      } else {
+        swapPlayers(selectedSlot, { type, id: slotId });
+        setSelectedSlot(null);
+      }
+      return;
+    }
+    if (player) {
+      setSelectedSlot({ type, id: slotId });
+    } else {
+      navigateToScouting(slotId, label, null);
+    }
   };
 
-  const handleBenchLongPress = (slotId, player, removeFn, assignFn, label) => {
-    if (!player) { handleBenchPress(slotId, label, assignFn); return; }
+  const handleBenchLongPress = (slotId, label, type) => {
+    setSelectedSlot(null);
+    const player   = type === 'bench' ? bench[slotId] : reserves[slotId];
+    const removeFn = type === 'bench' ? removeFromBench : removeFromReserves;
+    if (!player) { navigateToScouting(slotId, label, null); return; }
     Alert.alert(player.name, `GRL ${player.overall}  •  ${player.position}`, [
       { text: 'Cancelar', style: 'cancel' },
-      { text: 'Cambiar', onPress: () => navigateToScouting(slotId, label, null) },
-      { text: 'Quitar', style: 'destructive', onPress: () => removeFn(slotId) },
+      { text: 'Cambiar',  onPress: () => navigateToScouting(slotId, label, null) },
+      { text: 'Quitar',   style: 'destructive', onPress: () => removeFn(slotId) },
     ]);
   };
 
+  // ── Formación ───────────────────────────────────────────────────
   const handleFormationChange = (f) => {
     if (f === formation) return;
     const count = Object.keys(squad).length;
@@ -285,6 +401,7 @@ export default function SquadBuilderScreen({ navigation }) {
     }
   };
 
+  // ── Actualizar BD ───────────────────────────────────────────────
   const handleUpdateSquads = async () => {
     setIsUpdating(true);
     setUpdateProgress('Iniciando...');
@@ -293,9 +410,19 @@ export default function SquadBuilderScreen({ navigation }) {
     setUpdateProgress('');
     Alert.alert(
       result.ok ? 'Base de datos actualizada' : 'Error al actualizar',
-      result.ok ? `${result.count.toLocaleString()} jugadores disponibles.` : result.error
+      result.ok ? `${result.count.toLocaleString()} jugadores disponibles.` : result.error,
     );
   };
+
+  const isSlotSelected = (type, id) => selectedSlot?.type === type && selectedSlot?.id === id;
+  const selectedPlayer = selectedSlot
+    ? (selectedSlot.type === 'main'     ? squad[selectedSlot.id]
+     : selectedSlot.type === 'bench'    ? bench[selectedSlot.id]
+     : reserves[selectedSlot.id])
+    : null;
+
+  // Formaciones ordenadas y filtradas a las que existen
+  const orderedFormations = FORMATION_ORDER.filter((k) => FORMATIONS[k]);
 
   return (
     <View style={styles.container}>
@@ -313,8 +440,8 @@ export default function SquadBuilderScreen({ navigation }) {
         loadedLineupName={loadedLineupName}
       />
 
-      {/* Pending banner */}
-      {pendingPlayer && (
+      {/* Banner: jugador pendiente */}
+      {pendingPlayer && !selectedSlot && (
         <View style={styles.pendingBanner}>
           <Text style={styles.pendingText}>
             Toca un puesto para asignar a <Text style={styles.pendingName}>{pendingPlayer.name}</Text>
@@ -325,14 +452,27 @@ export default function SquadBuilderScreen({ navigation }) {
         </View>
       )}
 
-      {/* Formation chips */}
+      {/* Banner: jugador seleccionado para mover */}
+      {selectedSlot && selectedPlayer && (
+        <View style={[styles.pendingBanner, styles.moveBanner]}>
+          <Ionicons name="swap-horizontal" size={16} color="#fbbf24" style={{ marginRight: 6 }} />
+          <Text style={styles.pendingText}>
+            Toca un puesto para mover a <Text style={styles.pendingName}>{selectedPlayer.name}</Text>
+          </Text>
+          <TouchableOpacity onPress={() => setSelectedSlot(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="close" size={18} color="#64748b" />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* ── Chips de formación (ordenados) ─────────────────────── */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.formationScroll}
         contentContainerStyle={styles.formationContainer}
       >
-        {Object.keys(FORMATIONS).map((key) => (
+        {orderedFormations.map((key) => (
           <TouchableOpacity
             key={key}
             style={[styles.formationChip, formation === key && styles.formationChipActive]}
@@ -345,59 +485,85 @@ export default function SquadBuilderScreen({ navigation }) {
         ))}
       </ScrollView>
 
-      {/* Pitch + bench + reserves */}
-      <ScrollView style={styles.scrollFlex} contentContainerStyle={styles.pitchScroll} showsVerticalScrollIndicator={false}>
+      {/* ── Pitch + suplentes + reservas ───────────────────────── */}
+      <ScrollView
+        style={styles.scrollFlex}
+        contentContainerStyle={styles.pitchScroll}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Cancha: contenedor de ancho completo de pantalla.
+            CENTER_OFF centra la imagen visual; los slots se posicionan
+            con left = CENTER_OFF + x*PITCH_W - SLOT/2, garantizando
+            que incluso los extremos (x≈0.92) quedan DENTRO de los
+            bounds del View → Android entrega los touch events. */}
+        <View style={{ width: screenWidth, height: PITCH_H + SLOT_SIZE }}>
 
-        {/* Pitch */}
-        <View style={[styles.pitch, { width: PITCH_W, height: PITCH_H }]}>
-          {/* Franjas decorativas */}
-          {Array.from({ length: 6 }).map((_, i) => (
-            <View
-              key={i}
-              style={{
-                position: 'absolute',
-                left: 0, right: 0,
-                top: (PITCH_H / 6) * i,
-                height: PITCH_H / 6,
+          {/* Capa visual: campo verde con overflow:hidden para bordes */}
+          <View style={[styles.pitch, {
+            position: 'absolute',
+            left: CENTER_OFF, top: SLOT_SIZE / 2,
+            width: PITCH_W, height: PITCH_H,
+          }]}>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <View key={i} style={{
+                position: 'absolute', left: 0, right: 0,
+                top: (PITCH_H / 6) * i, height: PITCH_H / 6,
                 backgroundColor: i % 2 === 0 ? 'rgba(0,0,0,0.04)' : 'transparent',
-              }}
-            />
-          ))}
-          {/* Líneas */}
-          <View style={[styles.pitchLine, { top: PITCH_H / 2 - 0.5, left: PITCH_W * 0.05, width: PITCH_W * 0.9 }]} />
-          <View style={[styles.pitchCircle, { top: PITCH_H / 2 - 44, left: PITCH_W / 2 - 44, width: 88, height: 88, borderRadius: 44 }]} />
-          <View style={[styles.pitchBox, { top: 0, left: PITCH_W * 0.22, width: PITCH_W * 0.56, height: PITCH_H * 0.16 }]} />
-          <View style={[styles.pitchBox, { bottom: 0, left: PITCH_W * 0.22, width: PITCH_W * 0.56, height: PITCH_H * 0.16 }]} />
+              }} />
+            ))}
+            <View style={[styles.pitchLine,   { top: PITCH_H / 2 - 0.5, left: PITCH_W * 0.05, width: PITCH_W * 0.9 }]} />
+            <View style={[styles.pitchCircle, { top: PITCH_H / 2 - 44, left: PITCH_W / 2 - 44, width: 88, height: 88, borderRadius: 44 }]} />
+            <View style={[styles.pitchBox, { top: 0,    left: PITCH_W * 0.22, width: PITCH_W * 0.56, height: PITCH_H * 0.16 }]} />
+            <View style={[styles.pitchBox, { bottom: 0, left: PITCH_W * 0.22, width: PITCH_W * 0.56, height: PITCH_H * 0.16 }]} />
+          </View>
 
+          {/* Slots + nombre externo */}
           {currentSlots.map((slot) => {
-            const player = squad[slot.id];
-            const left = slot.x * PITCH_W - SLOT_SIZE / 2;
-            const top = slot.y * PITCH_H - SLOT_SIZE / 2;
-            const borderColor = getSlotBorderColor(slot.position);
+            const player     = squad[slot.id];
+            const isSelected = isSlotSelected('main', slot.id);
+            const borderColor = isSelected ? '#fbbf24' : getSlotBorderColor(slot.position);
+
+            // slot.y * PITCH_H da la posición dentro del campo visual.
+            // Sumamos SLOT_SIZE/2 porque el campo está desplazado esa misma cantidad.
+            const left = CENTER_OFF + slot.x * PITCH_W - SLOT_SIZE / 2;
+            const top  = SLOT_SIZE / 2 + slot.y * PITCH_H - SLOT_SIZE / 2;
+            const shortName = player?.name?.split(' ').slice(-1)[0] ?? '';
 
             return (
-              <TouchableOpacity
-                key={slot.id}
-                style={[
-                  styles.slot,
-                  { left, top, borderColor },
-                  player ? { backgroundColor: getOverallBg(player.overall) } : styles.slotEmpty,
-                ]}
-                onPress={() => handleSlotPress(slot)}
-                onLongPress={() => handleSlotLongPress(slot)}
-                activeOpacity={0.75}
-              >
-                {player ? (
-                  <>
-                    <Text style={styles.slotOverall}>{player.overall}</Text>
-                    <Text style={styles.slotName} numberOfLines={1}>
-                      {player.name.split(' ').slice(-1)[0]}
-                    </Text>
-                  </>
-                ) : (
-                  <Text style={styles.slotLabel}>{slot.label}</Text>
+              <Fragment key={slot.id}>
+                <TouchableOpacity
+                  style={[
+                    styles.slot,
+                    { left, top, borderColor },
+                    player ? { backgroundColor: getOverallBg(player.overall) } : styles.slotEmpty,
+                    isSelected && styles.slotSelected,
+                  ]}
+                  onPress={() => handleSlotPress(slot)}
+                  onLongPress={() => handleSlotLongPress(slot)}
+                  activeOpacity={0.75}
+                >
+                  {player
+                    ? <SlotPlayer player={player} />
+                    : <Text style={styles.slotLabel}>{selectedSlot ? '+' : slot.label}</Text>
+                  }
+                </TouchableOpacity>
+
+                {/* Nombre fuera del slot para que no quede clippeado */}
+                {player && (
+                  <View
+                    pointerEvents="none"
+                    style={{
+                      position: 'absolute',
+                      left: left - 8,
+                      top: top + SLOT_SIZE + 2,
+                      width: SLOT_SIZE + 16,
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Text style={styles.slotNameLabel} numberOfLines={1}>{shortName}</Text>
+                  </View>
                 )}
-              </TouchableOpacity>
+              </Fragment>
             );
           })}
         </View>
@@ -407,45 +573,56 @@ export default function SquadBuilderScreen({ navigation }) {
           <Text style={styles.countText}>{filledCount}/11 titulares</Text>
           {benchCount > 0 && <Text style={styles.countSep}>·</Text>}
           {benchCount > 0 && <Text style={styles.countText}>{benchCount} suplentes</Text>}
-          <Text style={styles.hint}>Mantén pulsado para editar</Text>
+          {!selectedSlot && <Text style={styles.hint}>Mantén pulsado para opciones · Toca para mover</Text>}
         </View>
 
-        {/* Suplentes */}
-        <View style={[styles.section, { width: PITCH_W }]}>
+        {/* ── Suplentes ──────────────────────────────────────────── */}
+        <View style={[styles.section, { width: PITCH_W, alignSelf: 'center' }]}>
           <Text style={styles.sectionTitle}>Suplentes</Text>
-          <View style={styles.benchRow}>
-            {BENCH_SLOTS.map((slot) => (
-              <BenchCard
-                key={slot.id}
-                slotId={slot.id}
-                label={slot.label}
-                player={bench[slot.id]}
-                pendingPlayer={pendingPlayer}
-                onPress={() => handleBenchPress(slot.id, slot.label, assignToBench)}
-                onLongPress={() => handleBenchLongPress(slot.id, bench[slot.id], removeFromBench, assignToBench, slot.label)}
-              />
-            ))}
-          </View>
+          {chunkArray(BENCH_SLOTS, 4).map((row, rIdx) => (
+            <View key={rIdx} style={styles.benchRow}>
+              {row.map((slot) => (
+                <BenchCard
+                  key={slot.id}
+                  label={slot.label}
+                  player={bench[slot.id]}
+                  pendingPlayer={pendingPlayer}
+                  isSelected={isSlotSelected('bench', slot.id)}
+                  onPress={() => handleBenchPress(slot.id, slot.label, 'bench')}
+                  onLongPress={() => handleBenchLongPress(slot.id, slot.label, 'bench')}
+                  style={styles.benchCardFlex}
+                />
+              ))}
+              {row.length < 4 && Array.from({ length: 4 - row.length }).map((_, i) => (
+                <View key={i} style={styles.benchCardFlex} />
+              ))}
+            </View>
+          ))}
         </View>
 
-        {/* Reservas */}
-        <View style={[styles.section, { width: PITCH_W }]}>
+        {/* ── Reservas ───────────────────────────────────────────── */}
+        <View style={[styles.section, { width: PITCH_W, alignSelf: 'center' }]}>
           <Text style={styles.sectionTitle}>Reservas</Text>
-          <View style={styles.benchRow}>
-            {RESERVE_SLOTS.map((slot) => (
-              <BenchCard
-                key={slot.id}
-                slotId={slot.id}
-                label={slot.label}
-                player={reserves[slot.id]}
-                pendingPlayer={pendingPlayer}
-                onPress={() => handleBenchPress(slot.id, slot.label, assignToReserves)}
-                onLongPress={() => handleBenchLongPress(slot.id, reserves[slot.id], removeFromReserves, assignToReserves, slot.label)}
-              />
-            ))}
-          </View>
+          {chunkArray(RESERVE_SLOTS, 4).map((row, rIdx) => (
+            <View key={rIdx} style={styles.benchRow}>
+              {row.map((slot) => (
+                <BenchCard
+                  key={slot.id}
+                  label={slot.label}
+                  player={reserves[slot.id]}
+                  pendingPlayer={pendingPlayer}
+                  isSelected={isSlotSelected('reserves', slot.id)}
+                  onPress={() => handleBenchPress(slot.id, slot.label, 'reserves')}
+                  onLongPress={() => handleBenchLongPress(slot.id, slot.label, 'reserves')}
+                  style={styles.benchCardFlex}
+                />
+              ))}
+              {row.length < 4 && Array.from({ length: 4 - row.length }).map((_, i) => (
+                <View key={i} style={styles.benchCardFlex} />
+              ))}
+            </View>
+          ))}
         </View>
-
       </ScrollView>
 
       {/* Bottom bar */}
@@ -465,12 +642,15 @@ export default function SquadBuilderScreen({ navigation }) {
               <Ionicons name="shield-outline" size={16} color="#60a5fa" />
               <Text style={styles.teamsButtonText}>Mis Equipos</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.newBtn} onPress={() => {
-              Alert.alert('Nueva pizarra', '¿Limpiar la pizarra actual?', [
-                { text: 'Cancelar', style: 'cancel' },
-                { text: 'Nueva', style: 'destructive', onPress: newLineup },
-              ]);
-            }}>
+            <TouchableOpacity
+              style={styles.newBtn}
+              onPress={() =>
+                Alert.alert('Nueva pizarra', '¿Limpiar la pizarra actual?', [
+                  { text: 'Cancelar', style: 'cancel' },
+                  { text: 'Nueva', style: 'destructive', onPress: newLineup },
+                ])
+              }
+            >
               <Ionicons name="add-outline" size={16} color="#94a3b8" />
             </TouchableOpacity>
           </View>
@@ -483,69 +663,75 @@ export default function SquadBuilderScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a' },
 
-  formationScroll: { maxHeight: 46, flexGrow: 0, flexShrink: 0, backgroundColor: '#0f172a', borderBottomWidth: 1, borderBottomColor: '#1e293b' },
+  formationScroll: {
+    maxHeight: 46, flexGrow: 0, flexShrink: 0,
+    backgroundColor: '#0f172a', borderBottomWidth: 1, borderBottomColor: '#1e293b',
+  },
   formationContainer: { paddingHorizontal: 12, paddingVertical: 7, gap: 8, alignItems: 'center' },
   formationChip: {
-    paddingHorizontal: 16, paddingVertical: 6, borderRadius: 20,
+    paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20,
     backgroundColor: '#1e293b', borderWidth: 1, borderColor: '#334155',
   },
-  formationChipActive: { backgroundColor: '#1d4ed8', borderColor: '#1d4ed8' },
-  formationChipText: { color: '#94a3b8', fontWeight: '700', fontSize: 13 },
+  formationChipActive:     { backgroundColor: '#1d4ed8', borderColor: '#1d4ed8' },
+  formationChipText:       { color: '#94a3b8', fontWeight: '700', fontSize: 12 },
   formationChipTextActive: { color: '#fff' },
 
-  scrollFlex: { flex: 1 },
-  pitchScroll: { alignItems: 'center', paddingVertical: 12 },
+  scrollFlex:  { flex: 1 },
+  pitchScroll: { paddingVertical: 12 },
 
   pitch: {
-    backgroundColor: '#15803d',
-    borderRadius: 10,
-    position: 'relative',
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.2)',
-    overflow: 'hidden',
+    backgroundColor: '#15803d', borderRadius: 10,
+    borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)', overflow: 'hidden',
   },
-  pitchLine: { position: 'absolute', height: 1, backgroundColor: 'rgba(255,255,255,0.25)' },
+  pitchLine:   { position: 'absolute', height: 1, backgroundColor: 'rgba(255,255,255,0.25)' },
   pitchCircle: { position: 'absolute', borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)', backgroundColor: 'transparent' },
-  pitchBox: { position: 'absolute', borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)', backgroundColor: 'transparent' },
+  pitchBox:    { position: 'absolute', borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)', backgroundColor: 'transparent' },
 
   slot: {
     position: 'absolute',
-    width: SLOT_SIZE, height: SLOT_SIZE,
-    borderRadius: SLOT_SIZE / 2,
-    justifyContent: 'center', alignItems: 'center',
-    borderWidth: 2, overflow: 'hidden',
+    width: SLOT_SIZE, height: SLOT_SIZE, borderRadius: SLOT_SIZE / 2,
+    justifyContent: 'center', alignItems: 'center', borderWidth: 2.5,
   },
-  slotEmpty: { backgroundColor: 'rgba(0,0,0,0.55)' },
-  slotOverall: {
-    color: '#fff', fontSize: 15, fontWeight: 'bold', lineHeight: 17,
-    textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2,
-  },
-  slotName: {
-    color: '#fff', fontSize: 10, maxWidth: SLOT_SIZE - 4, textAlign: 'center', lineHeight: 12,
-    textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2,
+  slotEmpty:    { backgroundColor: 'rgba(0,0,0,0.55)' },
+  slotSelected: { borderColor: '#fbbf24', borderWidth: 3.5, elevation: 8 },
+
+  slotInitial: {
+    color: '#fff', fontSize: 22, fontWeight: '900',
+    textShadowColor: 'rgba(0,0,0,0.7)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3,
   },
   slotLabel: {
-    color: '#fff', fontSize: 12, fontWeight: 'bold',
+    color: '#fff', fontSize: 11, fontWeight: 'bold',
     textShadowColor: 'rgba(0,0,0,0.9)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3,
   },
+  slotNameLabel: {
+    color: '#fff', fontSize: 9, fontWeight: '700', textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.95)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
+    width: SLOT_SIZE + 16,
+  },
 
-  countRow: { flexDirection: 'row', gap: 6, alignItems: 'center', marginTop: 8, marginBottom: 4 },
+  countRow: {
+    flexDirection: 'row', gap: 6, alignItems: 'center',
+    marginTop: 6, marginBottom: 4, flexWrap: 'wrap',
+    justifyContent: 'center', paddingHorizontal: 16,
+  },
   countText: { color: '#64748b', fontSize: 11 },
-  countSep: { color: '#334155', fontSize: 11 },
-  hint: { color: '#334155', fontSize: 10, marginLeft: 6 },
+  countSep:  { color: '#334155', fontSize: 11 },
+  hint:      { color: '#334155', fontSize: 10 },
 
-  section: { marginTop: 8, marginBottom: 12 },
+  section:      { marginTop: 8, marginBottom: 12 },
   sectionTitle: { color: '#475569', fontSize: 11, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 },
-  benchRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  benchRow:     { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  benchCardFlex: { flex: 1, height: 72 },
   benchCard: {
-    width: 68, height: 72, borderRadius: 10,
+    height: 72, borderRadius: 10,
     backgroundColor: '#1e293b', borderWidth: 1, borderColor: '#334155',
     justifyContent: 'center', alignItems: 'center', padding: 4,
   },
-  benchOverall: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
-  benchName: { color: '#fff', fontSize: 9, textAlign: 'center', maxWidth: 62 },
-  benchPos: { color: '#94a3b8', fontSize: 8, marginTop: 1 },
-  benchEmptyIcon: { color: '#334155', fontSize: 20, lineHeight: 24 },
+  benchCardSelected: { borderColor: '#fbbf24', borderWidth: 2 },
+  benchOverall:  { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  benchName:     { color: '#fff', fontSize: 9, textAlign: 'center', maxWidth: 62 },
+  benchPos:      { color: '#94a3b8', fontSize: 8, marginTop: 1 },
+  benchEmptyIcon:  { color: '#334155', fontSize: 20, lineHeight: 24 },
   benchEmptyLabel: { color: '#475569', fontSize: 9, textAlign: 'center' },
 
   pendingBanner: {
@@ -553,6 +739,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1e3a5f', borderLeftWidth: 4, borderLeftColor: '#3b82f6',
     paddingHorizontal: 14, paddingVertical: 10,
   },
+  moveBanner: { backgroundColor: '#451a03', borderLeftColor: '#fbbf24' },
   pendingText: { color: '#93c5fd', fontSize: 13, flex: 1 },
   pendingName: { color: '#fff', fontWeight: 'bold' },
 
@@ -584,25 +771,22 @@ const styles = StyleSheet.create({
 
 const saveModal = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: '#1e293b', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 40 },
-  title: { color: '#f1f5f9', fontSize: 18, fontWeight: 'bold', marginBottom: 16 },
-  label: { color: '#94a3b8', fontSize: 12, fontWeight: '700', marginBottom: 6 },
+  sheet:   { backgroundColor: '#1e293b', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 40 },
+  title:   { color: '#f1f5f9', fontSize: 18, fontWeight: 'bold', marginBottom: 16 },
+  label:   { color: '#94a3b8', fontSize: 12, fontWeight: '700', marginBottom: 6 },
   input: {
     backgroundColor: '#0f172a', borderRadius: 10, paddingHorizontal: 14,
     height: 44, color: '#f1f5f9', fontSize: 15, borderWidth: 1, borderColor: '#475569',
   },
-  teamChip: {
-    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
-    backgroundColor: '#0f172a', borderWidth: 1, borderColor: '#334155',
-  },
-  teamChipActive: { backgroundColor: '#1d4ed8', borderColor: '#1d4ed8' },
-  teamChipText: { color: '#94a3b8', fontWeight: '600', fontSize: 13 },
+  teamChip:         { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: '#0f172a', borderWidth: 1, borderColor: '#334155' },
+  teamChipActive:   { backgroundColor: '#1d4ed8', borderColor: '#1d4ed8' },
+  teamChipText:     { color: '#94a3b8', fontWeight: '600', fontSize: 13 },
   teamChipTextActive: { color: '#fff' },
-  toggleNew: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },
-  toggleNewText: { color: '#94a3b8', fontSize: 13 },
-  actions: { flexDirection: 'row', gap: 12, marginTop: 20 },
-  cancelBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: '#0f172a', alignItems: 'center', borderWidth: 1, borderColor: '#334155' },
-  cancelText: { color: '#94a3b8', fontWeight: '600' },
-  saveBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: '#16a34a', alignItems: 'center' },
-  saveText: { color: '#fff', fontWeight: '700' },
+  toggleNew:        { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },
+  toggleNewText:    { color: '#94a3b8', fontSize: 13 },
+  actions:          { flexDirection: 'row', gap: 12, marginTop: 20 },
+  cancelBtn:        { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: '#0f172a', alignItems: 'center', borderWidth: 1, borderColor: '#334155' },
+  cancelText:       { color: '#94a3b8', fontWeight: '600' },
+  saveBtn:          { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: '#16a34a', alignItems: 'center' },
+  saveText:         { color: '#fff', fontWeight: '700' },
 });

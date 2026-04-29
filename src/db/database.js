@@ -189,6 +189,52 @@ export const addCustomPlayer = (player) => {
   }
 };
 
+export const getDistinctClubs = () => {
+  try {
+    return db.getAllSync(`
+      SELECT club, COUNT(*) as playerCount
+      FROM players
+      WHERE TRIM(club) != ''
+      GROUP BY club
+      ORDER BY club ASC
+    `);
+  } catch { return []; }
+};
+
+export const getDistinctNationalities = () => {
+  try {
+    return db.getAllSync(`
+      SELECT nationality, COUNT(*) as playerCount
+      FROM players
+      WHERE TRIM(nationality) != ''
+      GROUP BY nationality
+      ORDER BY nationality ASC
+    `);
+  } catch { return []; }
+};
+
+export const getTopPlayersByPosition = (position, limit = 3) => {
+  try {
+    return db.getAllSync(
+      `SELECT * FROM players
+       WHERE position = ? OR (',' || positions || ',' LIKE '%,' || ? || ',%')
+       ORDER BY overall DESC LIMIT ?`,
+      [position, position, limit]
+    );
+  } catch { return []; }
+};
+
+export const getPlayersByFilter = ({ club, nationality, limit = 200 }) => {
+  try {
+    let query = 'SELECT * FROM players WHERE 1=1';
+    const params = [];
+    if (club?.trim())        { query += ' AND club = ?';        params.push(club.trim()); }
+    if (nationality?.trim()) { query += ' AND nationality = ?'; params.push(nationality.trim()); }
+    query += ` ORDER BY overall DESC LIMIT ${limit}`;
+    return db.getAllSync(query, params);
+  } catch { return []; }
+};
+
 // ─────────────────────────────────────────────────────────────
 // TEAMS
 // ─────────────────────────────────────────────────────────────

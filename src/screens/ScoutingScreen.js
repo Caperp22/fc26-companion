@@ -1,17 +1,18 @@
 import { useEffect, useState } from 'react';
 import {
-  Alert,
-  FlatList,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    FlatList,
+    Image,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
-import { addCustomPlayer, searchPlayersWithFilters } from '../db/database';
 import { ALL_POSITIONS, POSITION_ES } from '../constants/positions';
+import { addCustomPlayer, searchPlayersWithFilters } from '../db/database';
 
 
 const getOverallColor = (overall) => {
@@ -26,6 +27,58 @@ const getPositionBg = (position) => {
   if (['CDM', 'CM', 'CAM', 'LM', 'RM'].includes(position)) return '#6d28d9';
   return '#b91c1c';
 };
+
+// ---- Tarjeta de jugador con foto ----------------------------------------
+
+function PlayerCard({ item, onPress, selectionMode }) {
+  const [imgError, setImgError] = useState(false);
+  const showPhoto = !!(item.faceUrl && !imgError);
+  const ovBg = getOverallColor(item.overall);
+
+  return (
+    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.75}>
+      {/* Foto o placeholder con initial */}
+      <View style={styles.photoWrapper}>
+        {showPhoto ? (
+          <Image
+            source={{ uri: item.faceUrl }}
+            style={styles.playerFace}
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <View style={[styles.playerFace, styles.playerFacePlaceholder, { backgroundColor: ovBg }]}>
+            <Text style={styles.playerFaceInitial}>{item.name?.[0] ?? '?'}</Text>
+          </View>
+        )}
+        {/* Overall en esquina inferior */}
+        <View style={[styles.ovrTag, { backgroundColor: ovBg }]}>
+          <Text style={styles.ovrTagText}>{item.overall}</Text>
+        </View>
+      </View>
+
+      {/* Info */}
+      <View style={styles.cardInfo}>
+        <Text style={styles.playerName} numberOfLines={1}>{item.name}</Text>
+        <View style={styles.cardMeta}>
+          <View style={[styles.positionBadge, { backgroundColor: getPositionBg(item.position) }]}>
+            <Text style={styles.positionText}>{POSITION_ES[item.position] || item.position}</Text>
+          </View>
+          {item.club ? <Text style={styles.metaText} numberOfLines={1}>{item.club}</Text> : null}
+          {item.age ? <Text style={styles.metaText}>{item.age} a</Text> : null}
+          <Text style={styles.potText}>POT {item.potential}</Text>
+        </View>
+        {item.nationality ? <Text style={styles.nationalityText}>{item.nationality}</Text> : null}
+      </View>
+
+      {/* Acción */}
+      {selectionMode ? (
+        <View style={styles.fichajeBadge}><Text style={styles.fichajeText}>FICHAR</Text></View>
+      ) : (
+        <Text style={styles.arrowIcon}>›</Text>
+      )}
+    </TouchableOpacity>
+  );
+}
 
 // ---- Modal añadir jugador manual ----------------------------------------
 
@@ -199,30 +252,7 @@ export default function ScoutingScreen({ route, navigation }) {
     clubFilter.length > 1 || leagueFilter.length > 1 || nationalityFilter.length > 1;
 
   const renderPlayerCard = ({ item }) => (
-    <TouchableOpacity style={styles.card} onPress={() => handleCardPress(item)} activeOpacity={0.75}>
-      <View style={[styles.overallBadge, { backgroundColor: getOverallColor(item.overall) }]}>
-        <Text style={styles.overallText}>{item.overall}</Text>
-      </View>
-      <View style={styles.cardInfo}>
-        <Text style={styles.playerName} numberOfLines={1}>{item.name}</Text>
-        <View style={styles.cardMeta}>
-          <View style={[styles.positionBadge, { backgroundColor: getPositionBg(item.position) }]}>
-            <Text style={styles.positionText}>{POSITION_ES[item.position] || item.position}</Text>
-          </View>
-          {item.club ? <Text style={styles.metaText} numberOfLines={1}>{item.club}</Text> : null}
-          <Text style={styles.metaText}>{item.age} a</Text>
-          <Text style={styles.potText}>POT {item.potential}</Text>
-        </View>
-        {item.nationality ? <Text style={styles.nationalityText}>{item.nationality}</Text> : null}
-      </View>
-      {selectionMode ? (
-        <View style={styles.fichajeBadge}>
-          <Text style={styles.fichajeText}>FICHAR</Text>
-        </View>
-      ) : (
-        <Text style={styles.arrowIcon}>›</Text>
-      )}
-    </TouchableOpacity>
+    <PlayerCard item={item} onPress={() => handleCardPress(item)} selectionMode={selectionMode} />
   );
 
   return (
@@ -429,6 +459,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 12,
     borderWidth: 1, borderColor: '#334155',
   },
+  photoWrapper: { position: 'relative', width: 52, height: 52, flexShrink: 0 },
+  playerFace: { width: 52, height: 52, borderRadius: 26, backgroundColor: '#334155' },
+  playerFacePlaceholder: { justifyContent: 'center', alignItems: 'center' },
+  playerFaceInitial: { color: '#fff', fontSize: 22, fontWeight: 'bold' },
+  ovrTag: {
+    position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -14 }],
+    width: 28, height: 16, borderRadius: 8, justifyContent: 'center', alignItems: 'center',
+  },
+  ovrTagText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
   overallBadge: { width: 46, height: 46, borderRadius: 23, justifyContent: 'center', alignItems: 'center' },
   overallText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
   cardInfo: { flex: 1 },

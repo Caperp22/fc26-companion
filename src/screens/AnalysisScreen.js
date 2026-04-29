@@ -1,0 +1,467 @@
+import { Ionicons } from '@expo/vector-icons';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { FORMATIONS } from '../constants/formations';
+import { getLineupsByTeam, getTopPlayersByPosition } from '../db/database';
+import { useSquadStore } from '../store/squadStore';
+
+// ─── Compatibilidad de posición ─────────────────────────────────
+const ADJACENT = {
+  GK:  [],
+  CB:  ['LB', 'RB', 'CDM'],
+  LB:  ['CB', 'LWB', 'LM'],
+  RB:  ['CB', 'RWB', 'RM'],
+  LWB: ['LB', 'LM'],
+  RWB: ['RB', 'RM'],
+  CDM: ['CM', 'CB'],
+  CM:  ['CDM', 'CAM', 'LM', 'RM'],
+  CAM: ['CM', 'CF', 'LW', 'RW'],
+  LM:  ['LW', 'CM', 'LB'],
+  RM:  ['RW', 'CM', 'RB'],
+  LW:  ['LM', 'ST', 'CAM'],
+  RW:  ['RM', 'ST', 'CAM'],
+  CF:  ['ST', 'CAM'],
+  ST:  ['CF', 'LW', 'RW'],
+};
+
+function matchScore(player, targetPos) {
+  const positions = (player.positions || player.position || '')
+    .split(',').map(p => p.trim()).filter(Boolean);
+  if (positions.includes(targetPos)) return 1.0;
+  if ((ADJACENT[targetPos] || []).some(p => positions.includes(p))) return 0.70;
+  return 0.45;
+}
+
+function scoreFormation(slots, playerPool) {
+  const available = [...playerPool];
+  let total = 0;
+  for (const slot of slots) {
+    let bestVal = 0, bestIdx = -1;
+    available.forEach((p, i) => {
+      const v = matchScore(p, slot.position) * p.overall;
+      if (v > bestVal) { bestVal = v; bestIdx = i; }
+    });
+    if (bestIdx >= 0) {
+      total += bestVal;
+      available.splice(bestIdx, 1);
+    }
+  }
+  return Math.round(total / slots.length);
+}
+
+// ─── Componentes base ───────────────────────────────────────────
+function SectionHeader({ icon, title, subtitle }) {
+  return (
+    <View style={s.sectionHeader}>
+      <View style={s.iconWrap}>
+        <Ionicons name={icon} size={18} color="#3b82f6" />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={s.sectionTitle}>{title}</Text>
+        {subtitle ? <Text style={s.sectionSubtitle}>{subtitle}</Text> : null}
+      </View>
+    </View>
+  );
+}
+
+function OvrBadge({ ovr }) {
+  const bg = ovr >= 85 ? '#d97706' : ovr >= 75 ? '#16a34a' : '#4b5563';
+  return (
+    <View style={[s.ovrBadge, { backgroundColor: bg }]}>
+      <Text style={s.ovrText}>{ovr}</Text>
+    </View>
+  );
+}
+
+function TipBox({ text }) {
+  return (
+    <View style={s.tipBox}>
+      <Ionicons name="bulb-outline" size={14} color="#fbbf24" />
+      <Text style={s.tipText}>{text}</Text>
+    </View>
+  );
+}
+
+// ─── Sección 1: Huecos ──────────────────────────────────────────
+function GapsSection({ formation, squad }) {
+  const slots = FORMATIONS[formation]?.slots || [];
+  const emptySlots = slots.filter(sl => !squad[sl.id]);
+  const missingPos = [...new Set(emptySlots.map(sl => sl.position))];
+
+  const suggestions = useMemo(() => {
+    const out = {};
+    missingPos.forEach(pos => { out[pos] = getTopPlayersByPosition(pos, 3); });
+    return out;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [missingPos.join(',')]);
+
+  const subtitle = emptySlots.length === 0
+    ? null
+    : `${emptySlots.length} posición${emptySlots.length > 1 ? 'es' : ''} sin cubrir`;
+
+  return (
+    <View style={s.card}>
+      <SectionHeader icon="alert-circle-outline" title="Huecos del equipo" subtitle={subtitle} />
+
+      {emptySlots.length === 0 ? (
+        <View style={s.successRow}>
+          <Ionicons name="checkmark-circle" size={20} color="#22c55e" />
+          <Text style={s.successText}>Once completo. Sin posiciones vacías.</Text>
+        </View>
+      ) : (
+        missingPos.map(pos => {
+          const slotsForPos = emptySlots.filter(sl => sl.position === pos);
+          const candidates  = suggestions[pos] || [];
+          return (
+            <View key={pos} style={s.gapBlock}>
+              <View style={s.gapLabelRow}>
+                <View style={s.posBadge}>
+                  <Text style={s.posText}>{slotsForPos[0]?.label ?? pos}</Text>
+                </View>
+                <Text style={s.gapPosName}>{pos}</Text>
+                {slotsForPos.length > 1 && (
+                  <Text style={s.gapCount}>× {slotsForPos.length}</Text>
+                )}
+              </View>
+
+              {candidates.length === 0 ? (
+                <Text style={s.emptyHint}>Sin jugadores en la BD para esta posición.</Text>
+              ) : (
+                candidates.map((p, i) => (
+                  <View key={p.id} style={s.candidateRow}>
+                    <Text style={s.candidateRank}>#{i + 1}</Text>
+                    <Text style={s.candidateName} numberOfLines={1}>{p.name}</Text>
+                    <Text style={s.candidateClub} numberOfLines={1}>{p.club}</Text>
+                    <OvrBadge ovr={p.overall} />
+                  </View>
+                ))
+              )}
+            </View>
+          );
+        })
+      )}
+    </View>
+  );
+}
+
+// ─── Sección 2: Mejor formación ─────────────────────────────────
+function BestFormationSection({ currentFormation, squad, bench, reserves }) {
+  const playerPool = useMemo(() => {
+    const all = [
+      ...Object.values(squad),
+      ...Object.values(bench),
+      ...Object.values(reserves),
+    ].filter(Boolean);
+    const seen = new Set();
+    return all.filter(p => { if (seen.has(p.name)) return false; seen.add(p.name); return true; });
+  }, [squad, bench, reserves]);
+
+  const rankings = useMemo(() => {
+    if (playerPool.length < 3) return [];
+    return Object.entries(FORMATIONS)
+      .map(([name, { slots }]) => ({ name, score: scoreFormation(slots, playerPool) }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5);
+  }, [playerPool]);
+
+  if (playerPool.length < 3) {
+    return (
+      <View style={s.card}>
+        <SectionHeader icon="analytics-outline" title="Mejor formación" />
+        <Text style={s.emptyHint}>
+          Añade al menos 3 jugadores a la pizarra para ver sugerencias.
+        </Text>
+      </View>
+    );
+  }
+
+  const topScore = rankings[0]?.score || 1;
+  const RANK_COLORS = ['#f59e0b', '#94a3b8', '#b45309', '#475569', '#475569'];
+
+  return (
+    <View style={s.card}>
+      <SectionHeader
+        icon="analytics-outline"
+        title="Mejor formación"
+        subtitle={`${playerPool.length} jugadores analizados`}
+      />
+
+      {rankings.map((item, i) => {
+        const isCurrent = item.name === currentFormation;
+        const barPct    = Math.round((item.score / topScore) * 100);
+        return (
+          <View
+            key={item.name}
+            style={[s.formRow, isCurrent && s.formRowActive]}
+          >
+            <View style={[s.rankBadge, { backgroundColor: RANK_COLORS[i] + '22', borderColor: RANK_COLORS[i] + '55' }]}>
+              <Text style={[s.rankText, { color: RANK_COLORS[i] }]}>{i + 1}</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={s.formNameRow}>
+                <Text style={[s.formName, isCurrent && { color: '#60a5fa' }]}>{item.name}</Text>
+                {isCurrent && (
+                  <View style={s.currentTag}>
+                    <Text style={s.currentTagText}>actual</Text>
+                  </View>
+                )}
+              </View>
+              <View style={s.formBar}>
+                <View style={[s.formBarFill, {
+                  width: `${barPct}%`,
+                  backgroundColor: i === 0 ? '#3b82f6' : '#334155',
+                }]} />
+              </View>
+            </View>
+            <Text style={[s.formScore, i === 0 && { color: '#60a5fa' }]}>{item.score}</Text>
+          </View>
+        );
+      })}
+
+      {rankings.length > 0 && rankings[0].name !== currentFormation && (
+        <TipBox
+          text={`Cambiar a ${rankings[0].name} podría mejorar tu equipo con los jugadores que tienes actualmente.`}
+        />
+      )}
+    </View>
+  );
+}
+
+// ─── Sección 3: Rotaciones ──────────────────────────────────────
+function RotationsSection({ loadedTeamId, loadedTeamName, navigation }) {
+  const [lineups, setLineups] = useState([]);
+
+  useEffect(() => {
+    const load = () => setLineups(loadedTeamId ? getLineupsByTeam(loadedTeamId) : []);
+    load();
+    const unsub = navigation?.addListener('focus', load);
+    return unsub;
+  }, [loadedTeamId, navigation]);
+
+  if (!loadedTeamId) {
+    return (
+      <View style={s.card}>
+        <SectionHeader icon="swap-horizontal-outline" title="Rotaciones" />
+        <Text style={s.emptyHint}>
+          Carga un equipo desde la Pizarra → Mis Equipos para ver sugerencias de rotación.
+        </Text>
+      </View>
+    );
+  }
+
+  if (lineups.length < 2) {
+    return (
+      <View style={s.card}>
+        <SectionHeader icon="swap-horizontal-outline" title="Rotaciones" subtitle={loadedTeamName} />
+        <Text style={s.emptyHint}>
+          Este equipo tiene {lineups.length === 0 ? 'ninguna' : 'solo una'} alineación.
+          Guarda una segunda (ej. "Alternativa") para ver sugerencias de rotación.
+        </Text>
+      </View>
+    );
+  }
+
+  const [l1, l2] = lineups;
+  const squad1 = (() => { try { return JSON.parse(l1.squad || '{}'); } catch { return {}; } })();
+  const squad2 = (() => { try { return JSON.parse(l2.squad || '{}'); } catch { return {}; } })();
+
+  const names1 = new Set(Object.values(squad1).filter(Boolean).map(p => p.name));
+  const names2 = new Set(Object.values(squad2).filter(Boolean).map(p => p.name));
+  const shared  = [...names1].filter(n => names2.has(n));
+  const onlyIn1 = Object.values(squad1).filter(p => p && !names2.has(p.name));
+  const onlyIn2 = Object.values(squad2).filter(p => p && !names1.has(p.name));
+
+  const total      = Math.max(names1.size, names2.size, 1);
+  const rotPct     = Math.round((1 - shared.length / total) * 100);
+  const rotColor   = rotPct >= 50 ? '#22c55e' : rotPct >= 25 ? '#f59e0b' : '#ef4444';
+  const rotLabel   = rotPct >= 50 ? 'Buena rotación' : rotPct >= 25 ? 'Rotación moderada' : 'Poca rotación';
+
+  return (
+    <View style={s.card}>
+      <SectionHeader
+        icon="swap-horizontal-outline"
+        title="Rotaciones"
+        subtitle={loadedTeamName}
+      />
+
+      {/* Medidor */}
+      <View style={s.rotMeter}>
+        <View style={{ flex: 1 }}>
+          <View style={s.rotLabelRow}>
+            <Text style={s.rotMeterLabel}>Índice de rotación</Text>
+            <Text style={[s.rotLabel, { color: rotColor }]}>{rotLabel}</Text>
+          </View>
+          <View style={s.rotBar}>
+            <View style={[s.rotBarFill, { width: `${rotPct}%`, backgroundColor: rotColor }]} />
+          </View>
+        </View>
+        <Text style={[s.rotPct, { color: rotColor }]}>{rotPct}%</Text>
+      </View>
+
+      {/* Comparativa */}
+      <View style={s.rotCompare}>
+        <View style={s.rotCol}>
+          <Text style={s.rotLineupName} numberOfLines={1}>{l1.name}</Text>
+          <Text style={s.rotFormation}>{l1.formation}  ·  {names1.size}/11</Text>
+        </View>
+        <Ionicons name="swap-horizontal" size={20} color="#334155" />
+        <View style={[s.rotCol, { alignItems: 'flex-end' }]}>
+          <Text style={s.rotLineupName} numberOfLines={1}>{l2.name}</Text>
+          <Text style={s.rotFormation}>{l2.formation}  ·  {names2.size}/11</Text>
+        </View>
+      </View>
+
+      {/* Jugadores compartidos */}
+      {shared.length > 0 && (
+        <View style={s.sharedBlock}>
+          <Text style={s.sharedTitle}>
+            {shared.length} jugador{shared.length > 1 ? 'es' : ''} en ambas alineaciones
+          </Text>
+          {shared.slice(0, 6).map(name => (
+            <View key={name} style={s.sharedRow}>
+              <View style={s.sharedDot} />
+              <Text style={s.sharedName}>{name}</Text>
+            </View>
+          ))}
+          {shared.length > 6 && (
+            <Text style={s.moreText}>... y {shared.length - 6} más</Text>
+          )}
+          <TipBox
+            text={`Estos jugadores juegan en los dos once. Úsalos en partidos clave con "${l1.name}" y dales descanso rotando a "${l2.name}".`}
+          />
+        </View>
+      )}
+
+      {/* Exclusivos por alineación */}
+      {(onlyIn1.length > 0 || onlyIn2.length > 0) && (
+        <View style={s.exclusiveBlock}>
+          <Text style={s.exclusiveTitle}>Jugadores exclusivos</Text>
+          <View style={s.exclusiveRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.exclusiveLineup}>{l1.name}</Text>
+              {onlyIn1.slice(0, 5).map(p => (
+                <Text key={p.name} style={s.exclusiveName} numberOfLines={1}>· {p.name}</Text>
+              ))}
+            </View>
+            <View style={s.exclusiveDivider} />
+            <View style={{ flex: 1 }}>
+              <Text style={[s.exclusiveLineup, { textAlign: 'right' }]}>{l2.name}</Text>
+              {onlyIn2.slice(0, 5).map(p => (
+                <Text key={p.name} style={[s.exclusiveName, { textAlign: 'right' }]} numberOfLines={1}>{p.name} ·</Text>
+              ))}
+            </View>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ─── Main ────────────────────────────────────────────────────────
+export default function AnalysisScreen({ navigation }) {
+  const { formation, squad, bench, reserves, loadedTeamId, loadedTeamName } = useSquadStore();
+
+  return (
+    <ScrollView style={s.container} contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
+      <GapsSection formation={formation} squad={squad} />
+      <BestFormationSection
+        currentFormation={formation}
+        squad={squad}
+        bench={bench}
+        reserves={reserves}
+      />
+      <RotationsSection
+        loadedTeamId={loadedTeamId}
+        loadedTeamName={loadedTeamName}
+        navigation={navigation}
+      />
+    </ScrollView>
+  );
+}
+
+// ─── Estilos ─────────────────────────────────────────────────────
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#0f172a' },
+  content:   { padding: 16, paddingBottom: 40, gap: 14 },
+
+  card: {
+    backgroundColor: '#1e293b', borderRadius: 16,
+    borderWidth: 1, borderColor: '#334155', padding: 16,
+  },
+
+  sectionHeader:   { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
+  iconWrap:        { width: 36, height: 36, borderRadius: 10, backgroundColor: '#1e3a5f', justifyContent: 'center', alignItems: 'center' },
+  sectionTitle:    { color: '#f1f5f9', fontSize: 15, fontWeight: '700' },
+  sectionSubtitle: { color: '#64748b', fontSize: 11, marginTop: 1 },
+
+  successRow:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  successText: { color: '#22c55e', fontSize: 14, fontWeight: '600' },
+  emptyHint:   { color: '#475569', fontSize: 13, lineHeight: 20 },
+
+  // Gaps
+  gapBlock:    { marginBottom: 14 },
+  gapLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 7 },
+  posBadge:    { backgroundColor: '#1d4ed8', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  posText:     { color: '#fff', fontSize: 11, fontWeight: '800' },
+  gapPosName:  { color: '#64748b', fontSize: 12 },
+  gapCount:    { color: '#475569', fontSize: 11 },
+  candidateRow:  { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: '#0f172a' },
+  candidateRank: { color: '#475569', fontSize: 11, width: 22 },
+  candidateName: { color: '#cbd5e1', fontSize: 13, fontWeight: '600', flex: 1 },
+  candidateClub: { color: '#475569', fontSize: 11, flex: 1, textAlign: 'right' },
+  ovrBadge:      { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 },
+  ovrText:       { color: '#fff', fontSize: 11, fontWeight: '800' },
+
+  // Best formation
+  formRow:     { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#0f172a' },
+  formRowActive: { backgroundColor: '#0d1f3c', borderRadius: 10, paddingHorizontal: 8, marginHorizontal: -8, borderBottomWidth: 0, marginBottom: 1 },
+  rankBadge:   { width: 26, height: 26, borderRadius: 6, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
+  rankText:    { fontSize: 12, fontWeight: '800' },
+  formNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+  formName:    { color: '#cbd5e1', fontSize: 14, fontWeight: '700' },
+  formBar:     { height: 4, backgroundColor: '#0f172a', borderRadius: 2, overflow: 'hidden' },
+  formBarFill: { height: '100%', borderRadius: 2 },
+  formScore:   { color: '#64748b', fontSize: 14, fontWeight: '700', minWidth: 36, textAlign: 'right' },
+  currentTag:      { backgroundColor: '#1d4ed8', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5 },
+  currentTagText:  { color: '#bfdbfe', fontSize: 9, fontWeight: '700' },
+
+  tipBox: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+    backgroundColor: '#1a1700', borderRadius: 10, padding: 12, marginTop: 12,
+    borderWidth: 1, borderColor: '#3d3200',
+  },
+  tipText: { color: '#94a3b8', fontSize: 12, lineHeight: 18, flex: 1 },
+
+  // Rotations
+  rotMeter:    { marginBottom: 12 },
+  rotLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+  rotMeterLabel: { color: '#64748b', fontSize: 12 },
+  rotLabel:    { fontSize: 12, fontWeight: '700' },
+  rotBar:      { height: 8, backgroundColor: '#0f172a', borderRadius: 4, overflow: 'hidden' },
+  rotBarFill:  { height: '100%', borderRadius: 4 },
+  rotPct:      { fontSize: 28, fontWeight: '900', textAlign: 'right', marginTop: 4 },
+
+  rotCompare:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#0f172a', borderRadius: 10, padding: 12, marginBottom: 12, gap: 8 },
+  rotCol:        { flex: 1 },
+  rotLineupName: { color: '#f1f5f9', fontSize: 14, fontWeight: '700' },
+  rotFormation:  { color: '#64748b', fontSize: 11, marginTop: 2 },
+
+  sharedBlock: { marginTop: 4 },
+  sharedTitle: { color: '#f59e0b', fontSize: 12, fontWeight: '700', marginBottom: 8 },
+  sharedRow:   { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 3 },
+  sharedDot:   { width: 6, height: 6, borderRadius: 3, backgroundColor: '#f59e0b' },
+  sharedName:  { color: '#94a3b8', fontSize: 12 },
+  moreText:    { color: '#475569', fontSize: 11, marginTop: 2 },
+
+  exclusiveBlock:   { marginTop: 14 },
+  exclusiveTitle:   { color: '#475569', fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 },
+  exclusiveRow:     { flexDirection: 'row', gap: 12 },
+  exclusiveDivider: { width: 1, backgroundColor: '#1e293b' },
+  exclusiveLineup:  { color: '#475569', fontSize: 11, fontWeight: '700', marginBottom: 5 },
+  exclusiveName:    { color: '#94a3b8', fontSize: 12, marginBottom: 3 },
+});

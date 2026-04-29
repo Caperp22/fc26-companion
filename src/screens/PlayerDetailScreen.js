@@ -64,8 +64,8 @@ export default function PlayerDetailScreen({ route, navigation }) {
 
   const handleFichar = () => {
     if (!slotId) return;
-    if (slotId.startsWith('B')) assignToBench(slotId, player);
-    else if (slotId.startsWith('R')) assignToReserves(slotId, player);
+    if (/^B\d+$/.test(slotId)) assignToBench(slotId, player);
+    else if (/^R\d+$/.test(slotId)) assignToReserves(slotId, player);
     else assignPlayer(slotId, player);
     navigation.pop(2);
   };
