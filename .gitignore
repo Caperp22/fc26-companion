@@ -45,5 +45,14 @@ app-example
 # Kaggle downloads temporales
 tmp_kaggle/
 
+# Debug temporales del scraper
+debug_*.html
+*.tmp
+
+# Python cache
+scripts/__pycache__/
+**/__pycache__/
+*.pyc
+
 # Variables de entorno
 .env
