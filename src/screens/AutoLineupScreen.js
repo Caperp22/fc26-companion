@@ -15,6 +15,7 @@ import { FORMATIONS } from '../constants/formations';
 import { POSITION_BG } from '../constants/positions';
 import {
   addToRoster,
+  getLineupsByTeam,
   getRoster,
   removeFromRoster,
   searchPlayersWithFilters,
@@ -228,6 +229,56 @@ function AddPlayerModal({ visible, onClose, onAdd, existingNames }) {
   );
 }
 
+// ── Modal: importar desde alineación guardada ─────────────────
+function ImportLineupModal({ visible, teamId, onClose, onImport }) {
+  const [lineups, setLineups] = useState([]);
+
+  useEffect(() => {
+    if (visible) {
+      try { setLineups(getLineupsByTeam(teamId)); } catch { setLineups([]); }
+    }
+  }, [visible, teamId]);
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={im.overlay}>
+        <View style={im.card}>
+          <View style={im.header}>
+            <Text style={im.title}>Importar jugadores de alineación</Text>
+            <TouchableOpacity onPress={onClose}>
+              <Ionicons name="close" size={22} color="#64748b" />
+            </TouchableOpacity>
+          </View>
+          <Text style={im.hint}>
+            Se añadirán a la plantilla todos los jugadores del titular, suplentes y reservas de la alineación elegida.
+          </Text>
+          {lineups.length === 0 ? (
+            <Text style={im.empty}>Este equipo no tiene alineaciones guardadas.</Text>
+          ) : (
+            lineups.map(l => {
+              const sq = (() => { try { return JSON.parse(l.squad || '{}'); } catch { return {}; } })();
+              const bn = (() => { try { return JSON.parse(l.bench || '{}'); } catch { return {}; } })();
+              const rs = (() => { try { return JSON.parse(l.reserves || '{}'); } catch { return {}; } })();
+              const total = Object.values(sq).filter(Boolean).length +
+                            Object.values(bn).filter(Boolean).length +
+                            Object.values(rs).filter(Boolean).length;
+              return (
+                <TouchableOpacity key={l.id} style={im.lineupRow} onPress={() => onImport(l)}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={im.lineupName}>{l.name}</Text>
+                    <Text style={im.lineupMeta}>{l.formation}  ·  {total} jugadores</Text>
+                  </View>
+                  <Ionicons name="download-outline" size={20} color="#3b82f6" />
+                </TouchableOpacity>
+              );
+            })
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // ── Pantalla principal ────────────────────────────────────────
 export default function AutoLineupScreen({ route, navigation }) {
   const { teamId, teamName = 'Plantilla' } = route.params || {};
@@ -235,6 +286,7 @@ export default function AutoLineupScreen({ route, navigation }) {
   const [formation, setFormation]   = useState('4-3-3');
   const [suggestions, setSuggestions] = useState(null);
   const [showAdd, setShowAdd]       = useState(false);
+  const [showImport, setShowImport] = useState(false);
 
   const loadLineup = useSquadStore(st => st.loadLineup);
 
@@ -258,6 +310,24 @@ export default function AutoLineupScreen({ route, navigation }) {
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Eliminar', style: 'destructive', onPress: () => { removeFromRoster(id); load(); } },
     ]);
+  };
+
+  const handleImport = (lineup) => {
+    const parse = (str) => { try { return JSON.parse(str || '{}'); } catch { return {}; } };
+    const players = [
+      ...Object.values(parse(lineup.squad)),
+      ...Object.values(parse(lineup.bench)),
+      ...Object.values(parse(lineup.reserves)),
+    ].filter(Boolean);
+
+    let added = 0;
+    players.forEach(p => {
+      const r = addToRoster(teamId, p);
+      if (r.ok) added++;
+    });
+    setShowImport(false);
+    load();
+    Alert.alert('Importación completa', `${added} jugadores añadidos a la plantilla.`);
   };
 
   const handleSuggest = () => {
@@ -319,10 +389,16 @@ export default function AutoLineupScreen({ route, navigation }) {
           <Text style={s.cardTitle}>
             {teamName}  ·  {roster.length} jugadores
           </Text>
-          <TouchableOpacity style={s.addBtn} onPress={() => setShowAdd(true)}>
-            <Ionicons name="add" size={16} color="#fff" />
-            <Text style={s.addBtnText}>Añadir</Text>
-          </TouchableOpacity>
+          <View style={s.headerBtns}>
+            <TouchableOpacity style={s.importBtn} onPress={() => setShowImport(true)}>
+              <Ionicons name="download-outline" size={14} color="#3b82f6" />
+              <Text style={s.importBtnText}>Importar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.addBtn} onPress={() => setShowAdd(true)}>
+              <Ionicons name="add" size={16} color="#fff" />
+              <Text style={s.addBtnText}>Añadir</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {roster.length === 0 ? (
@@ -393,6 +469,13 @@ export default function AutoLineupScreen({ route, navigation }) {
         onAdd={handleAdd}
         existingNames={existingNames}
       />
+
+      <ImportLineupModal
+        visible={showImport}
+        teamId={teamId}
+        onClose={() => setShowImport(false)}
+        onImport={handleImport}
+      />
     </ScrollView>
   );
 }
@@ -412,6 +495,9 @@ const s = StyleSheet.create({
   formChipText:    { color: '#475569', fontSize: 13, fontWeight: '600' },
   formChipTextActive: { color: '#3b82f6' },
 
+  headerBtns:    { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  importBtn:     { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: '#1d4ed8', backgroundColor: '#0d1f3c' },
+  importBtnText: { color: '#3b82f6', fontSize: 12, fontWeight: '700' },
   addBtn:     { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#1d4ed8', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
   addBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
 
@@ -471,4 +557,17 @@ const am = StyleSheet.create({
   playerMeta:    { color: '#64748b', fontSize: 11 },
   alreadyText:   { color: '#475569', fontSize: 11, fontWeight: '600' },
   hint:          { color: '#475569', fontSize: 13, textAlign: 'center', padding: 24 },
+});
+
+// ─── Estilos modal importar ───────────────────────────────────
+const im = StyleSheet.create({
+  overlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'center', padding: 24 },
+  card:       { backgroundColor: '#1e293b', borderRadius: 16, padding: 20, gap: 12, borderWidth: 1, borderColor: '#334155' },
+  header:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  title:      { color: '#f1f5f9', fontSize: 16, fontWeight: '700' },
+  hint:       { color: '#64748b', fontSize: 12, lineHeight: 18 },
+  empty:      { color: '#475569', fontSize: 13, textAlign: 'center', paddingVertical: 16 },
+  lineupRow:  { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0f172a', borderRadius: 10, padding: 14, borderWidth: 1, borderColor: '#334155' },
+  lineupName: { color: '#f1f5f9', fontSize: 14, fontWeight: '700' },
+  lineupMeta: { color: '#64748b', fontSize: 11, marginTop: 2 },
 });
