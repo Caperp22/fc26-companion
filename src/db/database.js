@@ -15,6 +15,7 @@ const PLAYER_MIGRATIONS = [
   "ADD COLUMN defending INTEGER DEFAULT 0",
   "ADD COLUMN physic INTEGER DEFAULT 0",
   "ADD COLUMN positions TEXT DEFAULT ''",
+  "ADD COLUMN isCustom INTEGER DEFAULT 0",
 ];
 
 export const initDB = () => {
@@ -240,25 +241,49 @@ export const searchPlayersWithFilters = ({
 
 export const addCustomPlayer = (player) => {
   try {
+    const posArr = Array.isArray(player.positions)
+      ? player.positions : (player.positions || player.position || 'CM').split(',').map(p => p.trim()).filter(Boolean);
+    const mainPos = posArr[0] || 'CM';
     db.runSync(
       `INSERT INTO players
          (name, age, overall, potential, position, marketValue, status,
           club, league, nationality, faceUrl,
-          pace, shooting, passing, dribbling, defending, physic, positions)
-       VALUES (?, ?, ?, ?, ?, ?, 'wishlist', ?, ?, ?, '', 0, 0, 0, 0, 0, 0, ?)`,
+          pace, shooting, passing, dribbling, defending, physic, positions, isCustom)
+       VALUES (?, ?, ?, ?, ?, ?, 'wishlist', ?, ?, ?, '', 0, 0, 0, 0, 0, 0, ?, 1)`,
       [
         player.name, player.age || 25, player.overall || 70,
         player.potential || player.overall || 70,
-        player.position || 'CM', player.marketValue || 0,
+        mainPos, player.marketValue || 0,
         player.club || '', player.league || '', player.nationality || '',
-        player.position || 'CM',
+        posArr.join(','),
       ]
     );
-    return { ok: true };
+    const row = db.getFirstSync('SELECT last_insert_rowid() as id');
+    return { ok: true, id: row.id };
   } catch (error) {
     console.error('addCustomPlayer:', error);
     return { ok: false, error: error.message };
   }
+};
+
+export const updateCustomPlayer = (id, player) => {
+  try {
+    const posArr = Array.isArray(player.positions)
+      ? player.positions : (player.positions || player.position || 'CM').split(',').map(p => p.trim()).filter(Boolean);
+    db.runSync(
+      `UPDATE players SET name=?, age=?, overall=?, potential=?, position=?, marketValue=?, club=?, positions=? WHERE id=? AND isCustom=1`,
+      [player.name, player.age || 25, player.overall || 70, player.potential || player.overall || 70,
+       posArr[0] || 'CM', player.marketValue || 0, player.club || '', posArr.join(','), id]
+    );
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+};
+
+export const deleteCustomPlayer = (id) => {
+  try {
+    db.runSync('DELETE FROM players WHERE id=? AND isCustom=1', [id]);
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
 };
 
 export const getDistinctClubs = () => {
@@ -449,6 +474,14 @@ export const addToRoster = (teamId, player) => {
 
 export const removeFromRoster = (id) => {
   try { db.runSync('DELETE FROM roster WHERE id = ?', [id]); } catch {}
+};
+
+export const updateRosterPlayer = (rosterId, player) => {
+  try {
+    db.runSync('UPDATE roster SET playerName=?, playerData=? WHERE id=?',
+      [player.name, JSON.stringify(player), rosterId]);
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
 };
 
 // ─────────────────────────────────────────────────────────────

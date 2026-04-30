@@ -15,11 +15,15 @@ import {
 import { FORMATIONS } from '../constants/formations';
 import { POSITION_BG } from '../constants/positions';
 import {
+  addCustomPlayer,
   addToRoster,
+  deleteCustomPlayer,
   getLineupsByTeam,
   getRoster,
   removeFromRoster,
   searchPlayersWithFilters,
+  updateCustomPlayer,
+  updateRosterPlayer,
 } from '../db/database';
 import { useSquadStore } from '../store/squadStore';
 
@@ -68,6 +72,10 @@ function autoAssign(formation, playerPool) {
 const FORMATION_KEYS = Object.keys(FORMATIONS);
 const OVR_BG = (ovr) => ovr >= 85 ? '#d97706' : ovr >= 75 ? '#16a34a' : '#4b5563';
 const parsePlayer = (data) => { try { return JSON.parse(data); } catch { return {}; } };
+const BENCH_IDS   = ['B0','B1','B2','B3','B4','B5','B6'];
+const RESERVE_IDS = ['R0','R1','R2','R3','R4'];
+const ALL_POS = ['GK','CB','LB','RB','LWB','RWB','CDM','CM','CAM','LM','RM','LW','RW','CF','ST'];
+const POS_ES  = { GK:'PO',CB:'DFC',LB:'LI',RB:'LD',LWB:'CAI',RWB:'CAD',CDM:'MCD',CM:'MC',CAM:'MCO',LM:'MI',RM:'MD',LW:'EI',RW:'ED',CF:'SD',ST:'DC' };
 
 // ── Foto con badge OVR ────────────────────────────────────────
 function PlayerFace({ player, size = 48 }) {
@@ -97,15 +105,21 @@ function PlayerFace({ player, size = 48 }) {
 }
 
 // ── Fila de jugador en plantilla ──────────────────────────────
-function RosterItem({ item, onRemove }) {
+function RosterItem({ item, onRemove, onEdit }) {
   const player = useMemo(() => parsePlayer(item.playerData), [item.playerData]);
+  const posLabel = (player.positions || player.position || '').split(',').map(p => POS_ES[p.trim()] || p.trim()).join(' / ');
   return (
     <View style={s.rosterItem}>
       <PlayerFace player={player} size={46} />
       <View style={{ flex: 1 }}>
         <Text style={s.rosterName} numberOfLines={1}>{item.playerName}</Text>
-        <Text style={s.rosterMeta}>{player.position}  ·  {player.club || '—'}</Text>
+        <Text style={s.rosterMeta}>{posLabel}  ·  {player.club || '—'}</Text>
       </View>
+      {player.isCustom && (
+        <TouchableOpacity onPress={onEdit} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ marginRight: 10 }}>
+          <Ionicons name="pencil-outline" size={17} color="#3b82f6" />
+        </TouchableOpacity>
+      )}
       <TouchableOpacity onPress={onRemove} hitSlop={{ top: 8, bottom: 8, left: 10, right: 10 }}>
         <Ionicons name="trash-outline" size={18} color="#475569" />
       </TouchableOpacity>
@@ -179,8 +193,90 @@ function SuggestionCard({ title, formation, assignment, score, onLoad }) {
   );
 }
 
+// ── Modal crear / editar jugador manual ──────────────────────
+function PlayerFormModal({ visible, initial, onClose, onSave }) {
+  const [name, setName]       = useState('');
+  const [selPos, setSelPos]   = useState(['CM']);
+  const [overall, setOverall] = useState('75');
+  const [age, setAge]         = useState('25');
+  const [club, setClub]       = useState('');
+
+  useEffect(() => {
+    if (!visible) return;
+    if (initial) {
+      setName(initial.name || '');
+      setSelPos((initial.positions || initial.position || 'CM').split(',').map(p => p.trim()).filter(Boolean));
+      setOverall(String(initial.overall || 75));
+      setAge(String(initial.age || 25));
+      setClub(initial.club || '');
+    } else {
+      setName(''); setSelPos(['CM']); setOverall('75'); setAge('25'); setClub('');
+    }
+  }, [visible, initial]);
+
+  const togglePos = (pos) => {
+    if (selPos.includes(pos)) {
+      if (selPos.length === 1) return;
+      setSelPos(selPos.filter(p => p !== pos));
+    } else {
+      setSelPos([...selPos, pos]);
+    }
+  };
+
+  const handleSave = () => {
+    if (!name.trim()) { Alert.alert('Error', 'Escribe el nombre del jugador.'); return; }
+    const ovr = Math.min(99, Math.max(1, parseInt(overall) || 75));
+    onSave({ name: name.trim(), positions: selPos, position: selPos[0], overall: ovr,
+      potential: ovr, age: parseInt(age) || 25, club: club.trim(), marketValue: 0,
+      faceUrl: '', isCustom: true });
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={pf.overlay}>
+        <View style={pf.sheet}>
+          <View style={pf.header}>
+            <Text style={pf.title}>{initial ? 'Editar jugador' : 'Crear jugador manual'}</Text>
+            <TouchableOpacity onPress={onClose}><Ionicons name="close" size={24} color="#64748b" /></TouchableOpacity>
+          </View>
+          <ScrollView style={pf.body} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <Text style={pf.label}>Nombre</Text>
+            <TextInput style={pf.input} value={name} onChangeText={setName} placeholder="Nombre del jugador" placeholderTextColor="#475569" autoFocus={!initial} />
+
+            <Text style={pf.label}>Posiciones</Text>
+            <View style={pf.posGrid}>
+              {ALL_POS.map(pos => (
+                <TouchableOpacity key={pos} style={[pf.posChip, selPos.includes(pos) && pf.posChipActive]} onPress={() => togglePos(pos)}>
+                  <Text style={[pf.posChipText, selPos.includes(pos) && pf.posChipTextActive]}>{POS_ES[pos] || pos}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={pf.row}>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Text style={pf.label}>OVR</Text>
+                <TextInput style={pf.input} value={overall} onChangeText={setOverall} keyboardType="numeric" maxLength={2} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={pf.label}>Edad</Text>
+                <TextInput style={pf.input} value={age} onChangeText={setAge} keyboardType="numeric" maxLength={2} />
+              </View>
+            </View>
+
+            <Text style={pf.label}>Club (opcional)</Text>
+            <TextInput style={pf.input} value={club} onChangeText={setClub} placeholder="Nombre del club" placeholderTextColor="#475569" />
+          </ScrollView>
+          <TouchableOpacity style={pf.saveBtn} onPress={handleSave}>
+            <Text style={pf.saveBtnText}>{initial ? 'Guardar cambios' : 'Crear jugador'}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // ── Modal de búsqueda y adición ───────────────────────────────
-function AddPlayerModal({ visible, onClose, onAdd, existingNames }) {
+function AddPlayerModal({ visible, onClose, onAdd, existingNames, onCreateManual }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
 
@@ -232,7 +328,7 @@ function AddPlayerModal({ visible, onClose, onAdd, existingNames }) {
                     <Text style={[am.playerName, already && am.playerNameDim]} numberOfLines={1}>
                       {item.name}
                     </Text>
-                    <Text style={am.playerMeta}>{item.position}  ·  {item.club}</Text>
+                    <Text style={am.playerMeta}>{POS_ES[item.position] || item.position}  ·  {item.club}</Text>
                   </View>
                   {already
                     ? <Text style={am.alreadyText}>En plantilla</Text>
@@ -247,6 +343,10 @@ function AddPlayerModal({ visible, onClose, onAdd, existingNames }) {
               </Text>
             }
           />
+          <TouchableOpacity style={am.manualBtn} onPress={() => { handleClose(); onCreateManual(); }}>
+            <Ionicons name="person-add-outline" size={16} color="#a78bfa" />
+            <Text style={am.manualBtnText}>Crear jugador manualmente</Text>
+          </TouchableOpacity>
         </View>
       </View>
     </Modal>
@@ -306,11 +406,13 @@ function ImportLineupModal({ visible, teamId, onClose, onImport }) {
 // ── Pantalla principal ────────────────────────────────────────
 export default function AutoLineupScreen({ route, navigation }) {
   const { teamId, teamName = 'Plantilla' } = route.params || {};
-  const [roster, setRoster]         = useState([]);
-  const [formation, setFormation]   = useState('4-3-3');
+  const [roster, setRoster]           = useState([]);
+  const [formation, setFormation]     = useState('4-3-3');
   const [suggestions, setSuggestions] = useState(null);
-  const [showAdd, setShowAdd]       = useState(false);
-  const [showImport, setShowImport] = useState(false);
+  const [showAdd, setShowAdd]         = useState(false);
+  const [showImport, setShowImport]   = useState(false);
+  const [showCreate, setShowCreate]   = useState(false);
+  const [editingItem, setEditingItem] = useState(null); // { rosterId, player }
 
   const loadLineup = useSquadStore(st => st.loadLineup);
 
@@ -329,11 +431,35 @@ export default function AutoLineupScreen({ route, navigation }) {
     else Alert.alert('Aviso', result.error);
   };
 
-  const handleRemove = (id) => {
-    Alert.alert('Quitar jugador', '¿Eliminarlo de la plantilla?', [
+  const handleRemove = (item) => {
+    const player = parsePlayer(item.playerData);
+    Alert.alert('Quitar jugador', `¿Quitar a ${item.playerName} de la plantilla?`, [
       { text: 'Cancelar', style: 'cancel' },
-      { text: 'Eliminar', style: 'destructive', onPress: () => { removeFromRoster(id); load(); } },
-    ]);
+      { text: 'Solo de plantilla', onPress: () => { removeFromRoster(item.id); load(); } },
+      player.isCustom
+        ? { text: 'Eliminar del juego', style: 'destructive', onPress: () => { if (player.id) deleteCustomPlayer(player.id); removeFromRoster(item.id); load(); } }
+        : null,
+    ].filter(Boolean));
+  };
+
+  const handleCreateManual = (playerData) => {
+    const result = addCustomPlayer(playerData);
+    if (!result.ok) { Alert.alert('Error', result.error); return; }
+    const full = { ...playerData, id: result.id, isCustom: true };
+    const r = addToRoster(teamId, full);
+    if (!r.ok) Alert.alert('Aviso', r.error);
+    setShowCreate(false);
+    load();
+  };
+
+  const handleEditSave = (updatedData) => {
+    if (!editingItem) return;
+    const { rosterId, player } = editingItem;
+    if (player.id) updateCustomPlayer(player.id, updatedData);
+    const full = { ...player, ...updatedData };
+    updateRosterPlayer(rosterId, full);
+    setEditingItem(null);
+    load();
   };
 
   const handleImport = (lineup) => {
@@ -360,21 +486,41 @@ export default function AutoLineupScreen({ route, navigation }) {
       return;
     }
     const players = roster.map(r => parsePlayer(r.playerData)).filter(p => p.overall);
-    const first  = autoAssign(formation, players);
-    const second = autoAssign(formation, first.remaining);
-    setSuggestions({ first, second });
+    // Encontrar la mejor formación para esta plantilla
+    let bestForm = formation;
+    let bestScore = -1;
+    FORMATION_KEYS.forEach(f => {
+      const { score } = autoAssign(f, players);
+      if (score > bestScore) { bestScore = score; bestForm = f; }
+    });
+    if (bestForm !== formation) setFormation(bestForm);
+    const first  = autoAssign(bestForm, players);
+    const second = autoAssign(bestForm, first.remaining);
+    setSuggestions({ first, second, bestForm });
   };
 
-  const handleLoad = (assignment) => {
+  const handleLoad = (assignment, withBench = false) => {
+    let bench = {}, reserves = {};
+    if (withBench && suggestions) {
+      const secondPlayers = Object.values(suggestions.second.assignment).filter(Boolean);
+      BENCH_IDS.forEach((id, i) => { if (secondPlayers[i]) bench[id] = secondPlayers[i]; });
+      const usedNames = new Set([
+        ...Object.values(assignment).filter(Boolean).map(p => p.name),
+        ...secondPlayers.map(p => p.name),
+      ]);
+      const rest = roster.map(r => parsePlayer(r.playerData))
+        .filter(p => p.overall && !usedNames.has(p.name))
+        .sort((a, b) => b.overall - a.overall);
+      RESERVE_IDS.forEach((id, i) => { if (rest[i]) reserves[id] = rest[i]; });
+    }
     loadLineup({
-      teamId,
-      teamName,
+      teamId, teamName,
       lineupId:   null,
       lineupName: 'Sugerencia automática',
-      formation,
-      squad:    assignment,
-      bench:    {},
-      reserves: {},
+      formation:  suggestions?.bestForm || formation,
+      squad:      assignment,
+      bench,
+      reserves,
     });
     navigation.popToTop();
   };
@@ -431,9 +577,17 @@ export default function AutoLineupScreen({ route, navigation }) {
             <Text style={s.emptyText}>Sin jugadores. Toca "Añadir" para empezar.</Text>
           </View>
         ) : (
-          roster.map(item => (
-            <RosterItem key={item.id} item={item} onRemove={() => handleRemove(item.id)} />
-          ))
+          roster.map(item => {
+            const p = parsePlayer(item.playerData);
+            return (
+              <RosterItem
+                key={item.id}
+                item={item}
+                onRemove={() => handleRemove(item)}
+                onEdit={() => setEditingItem({ rosterId: item.id, player: p })}
+              />
+            );
+          })
         )}
       </View>
 
@@ -452,17 +606,17 @@ export default function AutoLineupScreen({ route, navigation }) {
         <>
           <SuggestionCard
             title="Alineación titular"
-            formation={formation}
+            formation={suggestions.bestForm || formation}
             assignment={suggestions.first.assignment}
             score={suggestions.first.score}
-            onLoad={() => handleLoad(suggestions.first.assignment)}
+            onLoad={() => handleLoad(suggestions.first.assignment, true)}
           />
           <SuggestionCard
             title="Segunda alineación"
-            formation={formation}
+            formation={suggestions.bestForm || formation}
             assignment={suggestions.second.assignment}
             score={suggestions.second.score}
-            onLoad={() => handleLoad(suggestions.second.assignment)}
+            onLoad={() => handleLoad(suggestions.second.assignment, false)}
           />
 
           {unassigned.length > 0 && (
@@ -492,6 +646,21 @@ export default function AutoLineupScreen({ route, navigation }) {
         onClose={() => setShowAdd(false)}
         onAdd={handleAdd}
         existingNames={existingNames}
+        onCreateManual={() => setShowCreate(true)}
+      />
+
+      <PlayerFormModal
+        visible={showCreate}
+        initial={null}
+        onClose={() => setShowCreate(false)}
+        onSave={handleCreateManual}
+      />
+
+      <PlayerFormModal
+        visible={!!editingItem}
+        initial={editingItem?.player}
+        onClose={() => setEditingItem(null)}
+        onSave={handleEditSave}
       />
 
       <ImportLineupModal
@@ -581,6 +750,30 @@ const am = StyleSheet.create({
   playerMeta:    { color: '#64748b', fontSize: 11 },
   alreadyText:   { color: '#475569', fontSize: 11, fontWeight: '600' },
   hint:          { color: '#475569', fontSize: 13, textAlign: 'center', padding: 24 },
+  manualBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 14, margin: 12, borderRadius: 10, backgroundColor: '#1e1b4b', borderWidth: 1, borderColor: '#4c1d95' },
+  manualBtnText: { color: '#a78bfa', fontSize: 13, fontWeight: '700' },
+});
+
+// ─── Estilos AddPlayerModal extras ───────────────────────────
+// (manualBtn ya referenciado arriba)
+
+// ─── Estilos PlayerFormModal ──────────────────────────────────
+const pf = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'flex-end' },
+  sheet:   { backgroundColor: '#1e293b', borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '88%', paddingBottom: 16 },
+  header:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: '#334155' },
+  title:   { color: '#f1f5f9', fontSize: 16, fontWeight: '700' },
+  body:    { padding: 16 },
+  label:   { color: '#94a3b8', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6, marginTop: 14 },
+  input:   { backgroundColor: '#0f172a', borderRadius: 10, paddingHorizontal: 14, height: 44, color: '#f1f5f9', fontSize: 14, borderWidth: 1, borderColor: '#334155' },
+  row:     { flexDirection: 'row' },
+  posGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  posChip:        { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: '#0f172a', borderWidth: 1, borderColor: '#334155' },
+  posChipActive:  { backgroundColor: '#1e3a5f', borderColor: '#3b82f6' },
+  posChipText:    { color: '#475569', fontSize: 12, fontWeight: '700' },
+  posChipTextActive: { color: '#60a5fa' },
+  saveBtn:     { margin: 16, backgroundColor: '#3b82f6', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '800' },
 });
 
 // ─── Estilos modal importar ───────────────────────────────────

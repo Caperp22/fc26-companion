@@ -126,6 +126,7 @@ const goToDetail = (navigation, player) =>
 
 // ─── Sección 0: Radar de profundidad por posición ──────────────
 const ALL_POSITIONS = ['GK','LB','CB','RB','LWB','RWB','CDM','CM','CAM','LM','RM','LW','RW','CF','ST'];
+const POS_ES = { GK:'PO',LB:'LI',CB:'DFC',RB:'LD',LWB:'CAI',RWB:'CAD',CDM:'MCD',CM:'MC',CAM:'MCO',LM:'MI',RM:'MD',LW:'EI',RW:'ED',CF:'SD',ST:'DC' };
 
 const POS_COLOR = (pos) => {
   if (pos === 'GK') return '#b45309';
@@ -210,7 +211,7 @@ function DepthChartSection({ squad, bench, reserves }) {
           return (
             <View key={pos} style={[s.depthCell, { backgroundColor: bg }]}>
               <View style={[s.depthPosBadge, { backgroundColor: POS_COLOR(pos) }]}>
-                <Text style={s.depthPosText}>{pos}</Text>
+                <Text style={s.depthPosText}>{POS_ES[pos] || pos}</Text>
               </View>
               <View style={s.depthCountRow}>
                 <View style={[s.depthDot, { backgroundColor: dot }]} />
@@ -283,9 +284,9 @@ function GapsSection({ formation, squad, balance, navigation }) {
             <View key={pos} style={s.gapBlock}>
               <View style={s.gapLabelRow}>
                 <View style={s.posBadge}>
-                  <Text style={s.posText}>{slotsForPos[0]?.label ?? pos}</Text>
+                  <Text style={s.posText}>{slotsForPos[0]?.label ?? POS_ES[pos] ?? pos}</Text>
                 </View>
-                <Text style={s.gapPosName}>{pos}</Text>
+                <Text style={s.gapPosName}>{POS_ES[pos] || pos}</Text>
                 {slotsForPos.length > 1 && <Text style={s.gapCount}>× {slotsForPos.length}</Text>}
               </View>
 
