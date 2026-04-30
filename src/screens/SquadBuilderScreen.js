@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -18,11 +18,37 @@ import { FORMATIONS } from '../constants/formations';
 import {
   createTeam,
   getLineupsByTeam,
+  getRoster,
   getTeams,
   saveLineup,
   updateSquadsFromCloud,
 } from '../db/database';
 import { useSquadStore } from '../store/squadStore';
+
+// ─── Auto-asignación desde plantilla ───────────────────────────
+const ADJACENT = {
+  GK:[], CB:['LB','RB','CDM'], LB:['CB','LWB','LM'], RB:['CB','RWB','RM'],
+  LWB:['LB','LM'], RWB:['RB','RM'], CDM:['CM','CB'], CM:['CDM','CAM','LM','RM'],
+  CAM:['CM','CF','LW','RW'], LM:['LW','CM','LB'], RM:['RW','CM','RB'],
+  LW:['LM','ST','CAM'], RW:['RM','ST','CAM'], CF:['ST','CAM'], ST:['CF','LW','RW'],
+};
+const matchScore = (player, targetPos) => {
+  const positions = (player.positions || player.position || '').split(',').map(p => p.trim()).filter(Boolean);
+  if (positions.includes(targetPos)) return 1.0;
+  if ((ADJACENT[targetPos] || []).some(p => positions.includes(p))) return 0.7;
+  return 0.45;
+};
+const autoAssign = (formation, playerPool) => {
+  const slots = FORMATIONS[formation]?.slots || [];
+  const available = [...playerPool];
+  const assignment = {};
+  for (const slot of slots) {
+    let bestVal = 0, bestIdx = -1;
+    available.forEach((p, i) => { const v = matchScore(p, slot.position) * p.overall; if (v > bestVal) { bestVal = v; bestIdx = i; } });
+    if (bestIdx >= 0) { assignment[slot.id] = available[bestIdx]; available.splice(bestIdx, 1); }
+  }
+  return { assignment, remaining: available };
+};
 
 // ─── Constantes ────────────────────────────────────────────────
 const SLOT_SIZE     = 60;
@@ -143,6 +169,57 @@ function FormationPickerModal({ visible, currentFormation, onSelect, onClose }) 
           </ScrollView>
         </View>
       </TouchableOpacity>
+    </Modal>
+  );
+}
+
+// ─── Modal selector desde plantilla ───────────────────────────
+function RosterPickerModal({ visible, slotLabel, slotPosition, players, onSelect, onScouting, onClose }) {
+  const { natural, others } = useMemo(() => {
+    if (!slotPosition) return { natural: [], others: [...players].sort((a,b) => b.overall - a.overall) };
+    const nat = players.filter(p => (p.positions || p.position || '').split(',').map(x=>x.trim()).includes(slotPosition));
+    const oth = players.filter(p => !nat.includes(p)).sort((a,b) => b.overall - a.overall);
+    return { natural: nat.sort((a,b) => b.overall - a.overall), others: oth };
+  }, [players, slotPosition]);
+
+  const OVR_BG = (o) => o >= 85 ? '#d97706' : o >= 75 ? '#16a34a' : '#4b5563';
+
+  const renderRow = (p) => (
+    <TouchableOpacity key={p.name} style={rpModal.row} onPress={() => onSelect(p)} activeOpacity={0.7}>
+      <View style={[rpModal.ovrBadge, { backgroundColor: OVR_BG(p.overall) }]}>
+        <Text style={rpModal.ovrText}>{p.overall}</Text>
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={rpModal.name} numberOfLines={1}>{p.name}</Text>
+        <Text style={rpModal.meta}>{p.position}  ·  {p.club || '—'}</Text>
+      </View>
+      <Ionicons name="add-circle" size={22} color="#3b82f6" />
+    </TouchableOpacity>
+  );
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={rpModal.overlay}>
+        <View style={rpModal.sheet}>
+          <View style={rpModal.header}>
+            <Text style={rpModal.title}>Elegir para {slotLabel || 'posición'}</Text>
+            <TouchableOpacity onPress={onClose}><Ionicons name="close" size={22} color="#64748b" /></TouchableOpacity>
+          </View>
+
+          <ScrollView style={rpModal.list} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            {natural.length > 0 && <Text style={rpModal.section}>Posición natural</Text>}
+            {natural.map(renderRow)}
+            {others.length > 0 && natural.length > 0 && <Text style={rpModal.section}>Otros</Text>}
+            {others.map(renderRow)}
+            {players.length === 0 && <Text style={rpModal.empty}>La plantilla está vacía.</Text>}
+          </ScrollView>
+
+          <TouchableOpacity style={rpModal.scoutingBtn} onPress={onScouting}>
+            <Ionicons name="search" size={15} color="#94a3b8" />
+            <Text style={rpModal.scoutingText}>Buscar en toda la base de datos</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
     </Modal>
   );
 }
@@ -321,6 +398,8 @@ export default function SquadBuilderScreen({ navigation }) {
   const [showFormationPicker, setShowFormationPicker] = useState(false);
   const [selectedSlot, setSelectedSlot]       = useState(null);
   const [teamLineups, setTeamLineups]         = useState([]);
+  const [rosterPlayers, setRosterPlayers]     = useState([]);
+  const [rosterPickerSlot, setRosterPickerSlot] = useState(null); // { slotId, slotLabel, slotPosition, type }
 
   const { width: screenWidth } = useWindowDimensions();
 
@@ -335,12 +414,15 @@ export default function SquadBuilderScreen({ navigation }) {
   const filledCount  = Object.keys(squad).length;
   const benchCount   = Object.keys(bench).length;
 
-  // ── Cargar alineaciones del equipo cuando cambia el equipo/lineup ──
+  // ── Cargar alineaciones y plantilla cuando cambia el equipo ───
   useEffect(() => {
     if (loadedTeamId) {
       setTeamLineups(getLineupsByTeam(loadedTeamId));
+      const raw = getRoster(loadedTeamId);
+      setRosterPlayers(raw.map(r => { try { return JSON.parse(r.playerData); } catch { return null; } }).filter(Boolean));
     } else {
       setTeamLineups([]);
+      setRosterPlayers([]);
     }
   }, [loadedTeamId, loadedLineupId]);
 
@@ -427,6 +509,8 @@ export default function SquadBuilderScreen({ navigation }) {
     const player = squad[slot.id];
     if (player) {
       setSelectedSlot({ type: 'main', id: slot.id });
+    } else if (rosterPlayers.length > 0) {
+      setRosterPickerSlot({ slotId: slot.id, slotLabel: slot.label, slotPosition: slot.position, type: 'main' });
     } else {
       navigateToScouting(slot.id, slot.label, slot.position);
     }
@@ -435,7 +519,11 @@ export default function SquadBuilderScreen({ navigation }) {
   const handleSlotLongPress = (slot) => {
     setSelectedSlot(null);
     const player = squad[slot.id];
-    if (!player) { navigateToScouting(slot.id, slot.label, slot.position); return; }
+    if (!player) {
+      if (rosterPlayers.length > 0) setRosterPickerSlot({ slotId: slot.id, slotLabel: slot.label, slotPosition: slot.position, type: 'main' });
+      else navigateToScouting(slot.id, slot.label, slot.position);
+      return;
+    }
     Alert.alert(player.name, `GRL ${player.overall}  •  ${player.position}`, [
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Cambiar',  onPress: () => navigateToScouting(slot.id, slot.label, slot.position) },
@@ -464,6 +552,8 @@ export default function SquadBuilderScreen({ navigation }) {
     }
     if (player) {
       setSelectedSlot({ type, id: slotId });
+    } else if (rosterPlayers.length > 0) {
+      setRosterPickerSlot({ slotId, slotLabel: label, slotPosition: null, type });
     } else {
       navigateToScouting(slotId, label, null);
     }
@@ -473,7 +563,11 @@ export default function SquadBuilderScreen({ navigation }) {
     setSelectedSlot(null);
     const player   = type === 'bench' ? bench[slotId] : reserves[slotId];
     const removeFn = type === 'bench' ? removeFromBench : removeFromReserves;
-    if (!player) { navigateToScouting(slotId, label, null); return; }
+    if (!player) {
+      if (rosterPlayers.length > 0) setRosterPickerSlot({ slotId, slotLabel: label, slotPosition: null, type });
+      else navigateToScouting(slotId, label, null);
+      return;
+    }
     Alert.alert(player.name, `GRL ${player.overall}  •  ${player.position}`, [
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Cambiar',  onPress: () => navigateToScouting(slotId, label, null) },
@@ -493,6 +587,34 @@ export default function SquadBuilderScreen({ navigation }) {
     } else {
       setFormation(f);
     }
+  };
+
+  // ── Auto-asignación desde plantilla ───────────────────────────
+  const handleAutoSquad = () => {
+    if (!loadedTeamId) { Alert.alert('Sin equipo', 'Carga un equipo desde "Mis Equipos" para usar la plantilla.'); return; }
+    if (rosterPlayers.length === 0) { Alert.alert('Plantilla vacía', 'Añade jugadores a la plantilla del equipo primero.'); return; }
+    const doAssign = () => {
+      const { assignment } = autoAssign(formation, rosterPlayers);
+      Object.entries(assignment).forEach(([slotId, player]) => assignPlayer(slotId, player));
+    };
+    const filled = Object.keys(squad).length;
+    if (filled > 0) {
+      Alert.alert('Auto-titular', `¿Reemplazar los ${filled} jugadores actuales con la mejor combinación de la plantilla?`, [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Confirmar', onPress: doAssign },
+      ]);
+    } else {
+      doAssign();
+    }
+  };
+
+  const handleAutoBench = () => {
+    if (!loadedTeamId) { Alert.alert('Sin equipo', 'Carga un equipo desde "Mis Equipos" para usar la plantilla.'); return; }
+    if (rosterPlayers.length === 0) { Alert.alert('Plantilla vacía', 'Añade jugadores a la plantilla del equipo primero.'); return; }
+    const usedNames = new Set(Object.values(squad).filter(Boolean).map(p => p.name));
+    const remaining = rosterPlayers.filter(p => !usedNames.has(p.name)).sort((a, b) => b.overall - a.overall);
+    if (remaining.length === 0) { Alert.alert('Sin jugadores disponibles', 'Todos los jugadores de la plantilla ya están en el once titular.'); return; }
+    BENCH_SLOTS.forEach((slot, i) => { if (remaining[i]) assignToBench(slot.id, remaining[i]); });
   };
 
   // ── Actualizar BD ───────────────────────────────────────────────
@@ -584,6 +706,21 @@ export default function SquadBuilderScreen({ navigation }) {
           <Ionicons name="chevron-down" size={15} color="#60a5fa" />
         </View>
       </TouchableOpacity>
+
+      {/* Barra de auto-asignación (solo si hay plantilla cargada) */}
+      {rosterPlayers.length > 0 && (
+        <View style={styles.autoBar}>
+          <TouchableOpacity style={styles.autoBtn} onPress={handleAutoSquad}>
+            <Ionicons name="flash" size={14} color="#fff" />
+            <Text style={styles.autoBtnText}>Auto-titular</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.autoBtn, styles.autoBtnSecond]} onPress={handleAutoBench}>
+            <Ionicons name="people" size={14} color="#7c3aed" />
+            <Text style={[styles.autoBtnText, { color: '#a78bfa' }]}>Auto-suplentes</Text>
+          </TouchableOpacity>
+          <Text style={styles.rosterCount}>{rosterPlayers.length} en plantilla</Text>
+        </View>
+      )}
 
       {/* ── Tabs de alineación (solo si hay 2+) ───────────────── */}
       {teamLineups.length >= 2 && (
@@ -742,6 +879,27 @@ export default function SquadBuilderScreen({ navigation }) {
         </View>
       </ScrollView>
 
+      {/* Picker de plantilla */}
+      <RosterPickerModal
+        visible={!!rosterPickerSlot}
+        slotLabel={rosterPickerSlot?.slotLabel}
+        slotPosition={rosterPickerSlot?.slotPosition}
+        players={rosterPlayers}
+        onSelect={(player) => {
+          const { slotId, type } = rosterPickerSlot;
+          if (type === 'main')     assignPlayer(slotId, player);
+          else if (type === 'bench')    assignToBench(slotId, player);
+          else if (type === 'reserves') assignToReserves(slotId, player);
+          setRosterPickerSlot(null);
+        }}
+        onScouting={() => {
+          const { slotId, slotLabel, slotPosition } = rosterPickerSlot;
+          setRosterPickerSlot(null);
+          navigateToScouting(slotId, slotLabel, slotPosition);
+        }}
+        onClose={() => setRosterPickerSlot(null)}
+      />
+
       {/* Bottom bar */}
       <View style={styles.bottomBar}>
         {isUpdating ? (
@@ -788,6 +946,19 @@ const styles = StyleSheet.create({
   formationBarName:   { color: '#f1f5f9', fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
   formationBarRight:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
   formationBarChange: { color: '#60a5fa', fontSize: 13, fontWeight: '600' },
+
+  autoBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 12, paddingVertical: 8,
+    backgroundColor: '#0f172a', borderBottomWidth: 1, borderBottomColor: '#1e293b',
+  },
+  autoBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: '#7c3aed', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16,
+  },
+  autoBtnSecond: { backgroundColor: '#1e1b4b', borderWidth: 1, borderColor: '#4c1d95' },
+  autoBtnText:   { color: '#fff', fontSize: 12, fontWeight: '700' },
+  rosterCount:   { color: '#475569', fontSize: 11, marginLeft: 'auto' },
 
   lineupTabsRow: {
     flexDirection: 'row', backgroundColor: '#0f172a',
@@ -934,4 +1105,21 @@ const saveModal = StyleSheet.create({
   cancelText:       { color: '#94a3b8', fontWeight: '600' },
   saveBtn:          { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: '#16a34a', alignItems: 'center' },
   saveText:         { color: '#fff', fontWeight: '700' },
+});
+
+const rpModal = StyleSheet.create({
+  overlay:     { flex: 1, backgroundColor: 'rgba(0,0,0,0.72)', justifyContent: 'flex-end' },
+  sheet:       { backgroundColor: '#1e293b', borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '78%', paddingBottom: 8 },
+  header:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 18, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#334155' },
+  title:       { color: '#f1f5f9', fontSize: 16, fontWeight: '700' },
+  list:        { paddingHorizontal: 14 },
+  section:     { color: '#475569', fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 12, marginBottom: 4 },
+  row:         { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#0f172a' },
+  ovrBadge:    { width: 38, height: 38, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+  ovrText:     { color: '#fff', fontWeight: '800', fontSize: 14 },
+  name:        { color: '#f1f5f9', fontSize: 14, fontWeight: '600' },
+  meta:        { color: '#64748b', fontSize: 11, marginTop: 1 },
+  empty:       { color: '#475569', fontSize: 13, textAlign: 'center', paddingVertical: 24 },
+  scoutingBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, margin: 14, padding: 12, borderRadius: 10, backgroundColor: '#0f172a', borderWidth: 1, borderColor: '#334155' },
+  scoutingText:{ color: '#64748b', fontSize: 13, fontWeight: '600' },
 });
