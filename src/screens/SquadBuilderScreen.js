@@ -807,7 +807,10 @@ export default function SquadBuilderScreen({ navigation }) {
           {currentSlots.map((slot) => {
             const player     = squad[slot.id];
             const isSelected = isSlotSelected('main', slot.id);
-            const borderColor = isSelected ? '#fbbf24' : getSlotBorderColor(slot.position);
+            const posScore   = player ? matchScore(player, slot.position) : 1.0;
+            const warnColor  = posScore < 0.7 ? '#ef4444' : posScore < 1.0 ? '#f59e0b' : null;
+            const borderColor = isSelected ? '#fbbf24'
+              : warnColor ?? getSlotBorderColor(slot.position);
 
             // slot.y * PITCH_H da la posición dentro del campo visual.
             // Sumamos SLOT_SIZE/2 porque el campo está desplazado esa misma cantidad.
@@ -833,6 +836,23 @@ export default function SquadBuilderScreen({ navigation }) {
                     : <Text style={styles.slotLabel}>{selectedSlot ? '+' : slot.label}</Text>
                   }
                 </TouchableOpacity>
+
+                {/* Badge de advertencia de posición – esquina superior-izquierda */}
+                {player && warnColor && (
+                  <View
+                    pointerEvents="none"
+                    style={{
+                      position: 'absolute',
+                      left: left - 3, top: top - 3,
+                      width: 16, height: 16, borderRadius: 8,
+                      backgroundColor: warnColor,
+                      justifyContent: 'center', alignItems: 'center',
+                      borderWidth: 1.5, borderColor: '#0f172a', zIndex: 10,
+                    }}
+                  >
+                    <Text style={{ color: '#fff', fontSize: 9, fontWeight: '900', lineHeight: 16 }}>!</Text>
+                  </View>
+                )}
 
                 {/* Badge OVR – fuera del slot para no ser clippeado */}
                 {player && (
