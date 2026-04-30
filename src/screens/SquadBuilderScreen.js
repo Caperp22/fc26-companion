@@ -253,7 +253,6 @@ function BenchCard({ label, player, pendingPlayer, isSelected, onPress, onLongPr
     <TouchableOpacity
       style={[
         styles.benchCard,
-        player && { backgroundColor: getOverallBg(player.overall), borderColor: 'transparent' },
         isSelected && styles.benchCardSelected,
         style,
       ]}
@@ -263,7 +262,7 @@ function BenchCard({ label, player, pendingPlayer, isSelected, onPress, onLongPr
     >
       {player ? (
         <>
-          <Text style={styles.benchOverall}>{player.overall}</Text>
+          <PlayerFace player={player} size={40} />
           <Text style={styles.benchName} numberOfLines={1}>{player.name.split(' ').slice(-1)[0]}</Text>
           <Text style={styles.benchPos}>{player.position}</Text>
         </>
@@ -825,7 +824,26 @@ export default function SquadBuilderScreen({ navigation }) {
                   }
                 </TouchableOpacity>
 
-                {/* Nombre fuera del slot para que no quede clippeado */}
+                {/* Badge OVR – fuera del slot para no ser clippeado */}
+                {player && (
+                  <View
+                    pointerEvents="none"
+                    style={{
+                      position: 'absolute',
+                      left: left + SLOT_SIZE - 16,
+                      top: top + SLOT_SIZE - 16,
+                      backgroundColor: getOverallBg(player.overall),
+                      borderRadius: 4, paddingHorizontal: 3, paddingVertical: 1,
+                      borderWidth: 1.5, borderColor: '#0f172a', zIndex: 10,
+                    }}
+                  >
+                    <Text style={{ color: '#fff', fontSize: 9, fontWeight: '900', lineHeight: 13 }}>
+                      {player.overall}
+                    </Text>
+                  </View>
+                )}
+
+                {/* Nombre + posición fuera del slot para que no quede clippeado */}
                 {player && (
                   <View
                     pointerEvents="none"
@@ -838,6 +856,7 @@ export default function SquadBuilderScreen({ navigation }) {
                     }}
                   >
                     <Text style={styles.slotNameLabel} numberOfLines={1}>{shortName}</Text>
+                    <Text style={styles.slotPosLabel}>{slot.label}</Text>
                   </View>
                 )}
               </Fragment>
@@ -1040,18 +1059,23 @@ const styles = StyleSheet.create({
   section:      { marginTop: 8, marginBottom: 12 },
   sectionTitle: { color: '#475569', fontSize: 11, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 },
   benchRow:     { flexDirection: 'row', gap: 8, marginBottom: 8 },
-  benchCardFlex: { flex: 1, height: 72 },
+  benchCardFlex: { flex: 1, height: 90 },
   benchCard: {
-    height: 72, borderRadius: 10,
+    height: 90, borderRadius: 10,
     backgroundColor: '#1e293b', borderWidth: 1, borderColor: '#334155',
-    justifyContent: 'center', alignItems: 'center', padding: 4,
+    justifyContent: 'center', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 4,
   },
   benchCardSelected: { borderColor: '#fbbf24', borderWidth: 2 },
-  benchOverall:  { color: '#fff', fontSize: 16, fontWeight: 'bold' },
-  benchName:     { color: '#fff', fontSize: 9, textAlign: 'center', maxWidth: 62 },
-  benchPos:      { color: '#94a3b8', fontSize: 8, marginTop: 1 },
+  benchName:     { color: '#f1f5f9', fontSize: 9, textAlign: 'center', maxWidth: 68, marginTop: 4 },
+  benchPos:      { color: '#64748b', fontSize: 8, marginTop: 1 },
   benchEmptyIcon:  { color: '#334155', fontSize: 20, lineHeight: 24 },
   benchEmptyLabel: { color: '#475569', fontSize: 9, textAlign: 'center' },
+
+  slotPosLabel: {
+    color: '#e2e8f0', fontSize: 8, fontWeight: '700', textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.95)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3,
+    marginTop: 1,
+  },
 
   pendingBanner: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
