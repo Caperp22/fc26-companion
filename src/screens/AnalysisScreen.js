@@ -12,6 +12,7 @@ import {
   getAffordablePlayersByPosition,
   getFreeAgentCandidates,
   getLineupsByTeam,
+  getTeams,
   getTopPlayersByPosition,
 } from '../db/database';
 import { useBudgetStore } from '../store/budgetStore';
@@ -134,30 +135,41 @@ const POS_COLOR = (pos) => {
 };
 
 function DepthChartSection({ squad, bench, reserves }) {
-  const coverage = useMemo(() => {
-    const allPlayers = [
-      ...Object.values(squad),
-      ...Object.values(bench),
-      ...Object.values(reserves),
-    ].filter(Boolean);
+  const [allLineups, setAllLineups] = useState([]);
+  const [selectedId, setSelectedId] = useState('active');
 
+  useEffect(() => {
+    try {
+      const teams = getTeams();
+      const flat = [];
+      teams.forEach(t => getLineupsByTeam(t.id).forEach(l => flat.push({ ...l, teamName: t.name })));
+      setAllLineups(flat);
+    } catch {}
+  }, []);
+
+  const { viewSq, viewBn, viewRs } = useMemo(() => {
+    if (selectedId === 'active') return { viewSq: squad, viewBn: bench, viewRs: reserves };
+    const lu = allLineups.find(l => l.id === selectedId);
+    if (!lu) return { viewSq: squad, viewBn: bench, viewRs: reserves };
+    const parse = (str) => { try { return JSON.parse(str || '{}'); } catch { return {}; } };
+    return { viewSq: parse(lu.squad), viewBn: parse(lu.bench), viewRs: parse(lu.reserves) };
+  }, [selectedId, allLineups, squad, bench, reserves]);
+
+  const coverage = useMemo(() => {
     const counts = {};
     ALL_POSITIONS.forEach(pos => { counts[pos] = 0; });
-
-    allPlayers.forEach(p => {
-      const positions = (p.positions || p.position || '')
-        .split(',').map(s => s.trim()).filter(Boolean);
-      positions.forEach(pos => {
-        if (counts[pos] !== undefined) counts[pos]++;
+    [...Object.values(viewSq), ...Object.values(viewBn), ...Object.values(viewRs)]
+      .filter(Boolean)
+      .forEach(p => {
+        (p.positions || p.position || '').split(',').map(s => s.trim()).filter(Boolean)
+          .forEach(pos => { if (counts[pos] !== undefined) counts[pos]++; });
       });
-    });
     return counts;
-  }, [squad, bench, reserves]);
+  }, [viewSq, viewBn, viewRs]);
 
-  const total = Object.values(squad).filter(Boolean).length +
-                Object.values(bench).filter(Boolean).length +
-                Object.values(reserves).filter(Boolean).length;
-
+  const total = Object.values(viewSq).filter(Boolean).length +
+                Object.values(viewBn).filter(Boolean).length +
+                Object.values(viewRs).filter(Boolean).length;
   const weakSpots = ALL_POSITIONS.filter(p => coverage[p] < 2).length;
 
   return (
@@ -165,13 +177,36 @@ function DepthChartSection({ squad, bench, reserves }) {
       <SectionHeader
         icon="grid-outline"
         title="Cobertura por posición"
-        subtitle={total === 0 ? 'Añade jugadores a la pizarra' : `${weakSpots} posición${weakSpots !== 1 ? 'es' : ''} con cobertura débil`}
+        subtitle={total === 0 ? 'Selecciona una alineación' : `${weakSpots} posición${weakSpots !== 1 ? 'es' : ''} con cobertura débil`}
       />
+
+      {/* Selector de alineación */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.depthChipScroll} contentContainerStyle={s.depthChipRow}>
+        <TouchableOpacity
+          style={[s.depthChip, selectedId === 'active' && s.depthChipActive]}
+          onPress={() => setSelectedId('active')}
+        >
+          <Ionicons name="football-outline" size={12} color={selectedId === 'active' ? '#3b82f6' : '#475569'} />
+          <Text style={[s.depthChipText, selectedId === 'active' && s.depthChipTextActive]}>Pizarra</Text>
+        </TouchableOpacity>
+        {allLineups.map(l => (
+          <TouchableOpacity
+            key={l.id}
+            style={[s.depthChip, selectedId === l.id && s.depthChipActive]}
+            onPress={() => setSelectedId(l.id)}
+          >
+            <Text style={[s.depthChipText, selectedId === l.id && s.depthChipTextActive]} numberOfLines={1}>
+              {l.teamName} · {l.name}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
       <View style={s.depthGrid}>
         {ALL_POSITIONS.map(pos => {
           const count = coverage[pos];
-          const bg   = count === 0 ? '#3f0f0f' : count === 1 ? '#3d2f00' : '#0d2f1a';
-          const dot  = count === 0 ? '#ef4444' : count === 1 ? '#f59e0b' : '#22c55e';
+          const bg  = count === 0 ? '#3f0f0f' : count === 1 ? '#3d2f00' : '#0d2f1a';
+          const dot = count === 0 ? '#ef4444' : count === 1 ? '#f59e0b' : '#22c55e';
           return (
             <View key={pos} style={[s.depthCell, { backgroundColor: bg }]}>
               <View style={[s.depthPosBadge, { backgroundColor: POS_COLOR(pos) }]}>
@@ -185,6 +220,7 @@ function DepthChartSection({ squad, bench, reserves }) {
           );
         })}
       </View>
+
       <View style={s.depthLegend}>
         {[['#ef4444','Sin cobertura'],['#f59e0b','1 jugador'],['#22c55e','2+ jugadores']].map(([c, l]) => (
           <View key={l} style={s.depthLegendItem}>
@@ -632,6 +668,12 @@ const s = StyleSheet.create({
   moreText:    { color: '#475569', fontSize: 11, marginTop: 2 },
 
   // Depth chart
+  depthChipScroll:    { marginBottom: 12, marginHorizontal: -4 },
+  depthChipRow:       { paddingHorizontal: 4, gap: 8, flexDirection: 'row' },
+  depthChip:          { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16, backgroundColor: '#0f172a', borderWidth: 1, borderColor: '#334155' },
+  depthChipActive:    { borderColor: '#3b82f6', backgroundColor: '#0d1f3c' },
+  depthChipText:      { color: '#475569', fontSize: 11, fontWeight: '600' },
+  depthChipTextActive:{ color: '#3b82f6' },
   depthGrid:       { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   depthCell:       { width: '29%', flexGrow: 1, borderRadius: 10, padding: 8, alignItems: 'center', gap: 5, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
   depthPosBadge:   { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 5 },
