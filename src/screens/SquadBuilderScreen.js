@@ -1,27 +1,27 @@
-import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  useWindowDimensions,
-  View,
+    ActivityIndicator,
+    Alert,
+    FlatList,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    useWindowDimensions,
+    View,
 } from 'react-native';
 import { FORMATIONS } from '../constants/formations';
 import {
-  createTeam,
-  getLineupsByTeam,
-  getRoster,
-  getTeams,
-  saveLineup,
-  updateSquadsFromCloud,
+    createTeam,
+    getLineupsByTeam,
+    getRoster,
+    getTeams,
+    saveLineup,
+    updateSquadsFromCloud,
 } from '../db/database';
 import { useSquadStore } from '../store/squadStore';
 
