@@ -67,6 +67,16 @@ const FORMATION_ORDER = [
   '5-2-2-1', '5-3-2', '5-4-1',
 ];
 
+const POS_ES = {
+  GK: 'PO', LB: 'LI', RB: 'LD', CB: 'DFC',
+  LWB: 'CAI', RWB: 'CAD',
+  CDM: 'MCD', CM: 'MC', CAM: 'MCO',
+  LM: 'MI', RM: 'MD',
+  LW: 'EI', RW: 'ED',
+  CF: 'SD', ST: 'DC',
+};
+const posEs = (pos) => POS_ES[pos] || pos;
+
 const getSlotBorderColor = (pos) => {
   if (pos === 'GK') return '#f59e0b';
   if (['CB', 'LB', 'RB', 'LWB', 'RWB'].includes(pos)) return '#3b82f6';
@@ -264,7 +274,7 @@ function BenchCard({ label, player, pendingPlayer, isSelected, onPress, onLongPr
         <>
           <PlayerFace player={player} size={40} />
           <Text style={styles.benchName} numberOfLines={1}>{player.name.split(' ').slice(-1)[0]}</Text>
-          <Text style={styles.benchPos}>{player.position}</Text>
+          <Text style={styles.benchPos}>{posEs(player.position)}</Text>
         </>
       ) : (
         <>
