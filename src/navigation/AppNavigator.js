@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import AnalysisScreen from '../screens/AnalysisScreen';
+import AutoLineupScreen from '../screens/AutoLineupScreen';
 import BudgetScreen from '../screens/BudgetScreen';
 import LeaguePlayersScreen from '../screens/LeaguePlayersScreen';
 import LeaguesScreen from '../screens/LeaguesScreen';
@@ -29,6 +30,7 @@ function SquadStackNavigator() {
     <SquadStack.Navigator screenOptions={HEADER}>
       <SquadStack.Screen name="SquadBuilder" component={SquadBuilderScreen} options={{ title: 'Mi Pizarra' }} />
       <SquadStack.Screen name="Teams"        component={TeamsScreen}        options={{ title: 'Mis Equipos' }} />
+      <SquadStack.Screen name="AutoLineup"   component={AutoLineupScreen}   options={({ route }) => ({ title: route.params?.teamName ?? 'Auto-Alinear' })} />
       <SquadStack.Screen name="Scouting"     component={ScoutingScreen}     options={{ title: 'Red de Ojeadores' }} />
       <SquadStack.Screen name="PlayerDetail" component={PlayerDetailScreen} options={{ title: 'Ficha del Jugador' }} />
       <SquadStack.Screen name="PlayerCompare" component={PlayerCompareScreen}

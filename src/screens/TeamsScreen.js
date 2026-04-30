@@ -55,7 +55,7 @@ function LineupCard({ lineup, onLoad, onDelete }) {
 }
 
 // ─── Team card ───────────────────────────────────────────────────
-function TeamCard({ team, lineups, expanded, onToggle, onLoad, onDeleteTeam, onDeleteLineup }) {
+function TeamCard({ team, lineups, expanded, onToggle, onLoad, onDeleteTeam, onDeleteLineup, onAutoLineup }) {
   const color = teamColor(team.id);
 
   const confirmDeleteTeam = () => {
@@ -84,6 +84,10 @@ function TeamCard({ team, lineups, expanded, onToggle, onLoad, onDeleteTeam, onD
           <Text style={styles.teamName}>{team.name}</Text>
           <Text style={styles.teamSub}>{lineups.length} / 3 alineaciones</Text>
         </View>
+        <TouchableOpacity style={styles.plantillaBtn} onPress={onAutoLineup}>
+          <Ionicons name="people-outline" size={13} color="#7c3aed" />
+          <Text style={styles.plantillaBtnText}>Plantilla</Text>
+        </TouchableOpacity>
         <TouchableOpacity onPress={confirmDeleteTeam} hitSlop={{ top: 8, bottom: 8, left: 12, right: 8 }}>
           <Ionicons name="trash-outline" size={17} color="#475569" />
         </TouchableOpacity>
@@ -200,6 +204,7 @@ export default function TeamsScreen({ navigation }) {
             onLoad={handleLoad}
             onDeleteTeam={handleDeleteTeam}
             onDeleteLineup={handleDeleteLineup}
+            onAutoLineup={() => navigation.navigate('AutoLineup', { teamId: item.id, teamName: item.name })}
           />
         )}
       />
@@ -269,6 +274,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#1d4ed8', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8,
   },
   loadBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+
+  plantillaBtn:     { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 9, paddingVertical: 5, borderRadius: 8, backgroundColor: '#2e1065', borderWidth: 1, borderColor: '#6d28d9', marginRight: 6 },
+  plantillaBtnText: { color: '#a78bfa', fontSize: 11, fontWeight: '700' },
 
   emptyState: { alignItems: 'center', marginTop: 80, paddingHorizontal: 40 },
   emptyTitle: { color: '#64748b', fontSize: 18, fontWeight: '700', marginTop: 16, marginBottom: 8 },

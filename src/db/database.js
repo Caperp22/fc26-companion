@@ -59,6 +59,15 @@ export const initDB = () => {
         FOREIGN KEY (teamId) REFERENCES teams(id)
       );
 
+      CREATE TABLE IF NOT EXISTS roster (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        teamId INTEGER NOT NULL,
+        playerName TEXT NOT NULL,
+        playerData TEXT NOT NULL,
+        addedAt TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY (teamId) REFERENCES teams(id)
+      );
+
       CREATE TABLE IF NOT EXISTS shortlist (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         playerName TEXT NOT NULL,
@@ -409,6 +418,37 @@ export const deleteLineup = (id) => {
     db.runSync('DELETE FROM lineups WHERE id = ?', [id]);
     return { ok: true };
   } catch (e) { return { ok: false, error: e.message }; }
+};
+
+// ─────────────────────────────────────────────────────────────
+// ROSTER (plantilla por equipo)
+// ─────────────────────────────────────────────────────────────
+
+export const getRoster = (teamId) => {
+  try {
+    return db.getAllSync('SELECT * FROM roster WHERE teamId = ? ORDER BY addedAt ASC', [teamId]);
+  } catch { return []; }
+};
+
+export const addToRoster = (teamId, player) => {
+  try {
+    const existing = db.getFirstSync(
+      'SELECT id FROM roster WHERE teamId = ? AND playerName = ?',
+      [teamId, player.name]
+    );
+    if (existing) return { ok: false, error: 'Ya está en la plantilla' };
+    db.runSync(
+      'INSERT INTO roster (teamId, playerName, playerData) VALUES (?, ?, ?)',
+      [teamId, player.name, JSON.stringify(player)]
+    );
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+};
+
+export const removeFromRoster = (id) => {
+  try { db.runSync('DELETE FROM roster WHERE id = ?', [id]); } catch {}
 };
 
 // ─────────────────────────────────────────────────────────────
