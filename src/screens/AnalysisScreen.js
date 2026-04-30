@@ -552,6 +552,181 @@ function RotationsSection({ loadedTeamId, loadedTeamName, navigation }) {
   );
 }
 
+// ─── Sección 4: Posiciones a mejorar según presupuesto ────────
+function WeakSpotsSection({ formation, squad, bench, reserves, balance, navigation }) {
+  const slots = FORMATIONS[formation]?.slots || [];
+  const allPlayers = useMemo(() =>
+    [...Object.values(squad), ...Object.values(bench), ...Object.values(reserves)].filter(Boolean),
+    [squad, bench, reserves]);
+  const avgOvr = allPlayers.length ? Math.round(allPlayers.reduce((s, p) => s + p.overall, 0) / allPlayers.length) : 75;
+
+  const weak = useMemo(() => {
+    const seen = new Set();
+    return slots
+      .filter(sl => { const p = squad[sl.id]; return p && p.overall < avgOvr && !seen.has(sl.position) && seen.add(sl.position); })
+      .map(sl => {
+        const player = squad[sl.id];
+        const candidates = balance > 0 ? getAffordablePlayersByPosition(sl.position, balance, 3) : [];
+        const best = getTopPlayersByPosition(sl.position, 1)[0];
+        return { slot: sl, player, candidates, best, gap: best ? best.overall - player.overall : 0 };
+      })
+      .sort((a, b) => b.gap - a.gap).slice(0, 4);
+  }, [slots, squad, avgOvr, balance]);
+
+  if (allPlayers.length < 3) return null;
+  return (
+    <View style={s.card}>
+      <SectionHeader icon="trending-up-outline" title="Posiciones a mejorar"
+        subtitle={weak.length === 0 ? 'Todos los titulares sobre la media del equipo' : `${weak.length} puesto${weak.length > 1 ? 's' : ''} por debajo de la media (${avgOvr} OVR)`} />
+      {weak.length === 0 ? (
+        <View style={s.successRow}><Ionicons name="checkmark-circle" size={20} color="#22c55e" />
+          <Text style={s.successText}>Equipo equilibrado — sin puestos críticos.</Text></View>
+      ) : weak.map(({ slot, player, candidates, best, gap }) => (
+        <View key={slot.id} style={s.gapBlock}>
+          <View style={s.gapLabelRow}>
+            <View style={s.posBadge}><Text style={s.posText}>{slot.label}</Text></View>
+            <Text style={s.gapPosName} numberOfLines={1}>{player.name}</Text>
+            <View style={[s.ovrBadge, { backgroundColor: player.overall >= 75 ? '#16a34a' : '#4b5563' }]}>
+              <Text style={s.ovrText}>{player.overall}</Text></View>
+            {gap > 0 && <Text style={{ color: '#ef4444', fontSize: 11, fontWeight: '700' }}>▲{gap}</Text>}
+          </View>
+          {candidates.length > 0 ? (
+            <>{<Text style={s.subheading}>Mejoras dentro del presupuesto</Text>}
+              {candidates.map((p, i) => <CandidateRow key={p.id} player={p} rank={i+1} affordable isFree={p.marketValue===0} onPress={() => goToDetail(navigation, p)} />)}
+            </>
+          ) : (
+            <Text style={s.noAffordText}>{balance <= 0 ? 'Sin presupuesto.' : `Sin candidatos asequibles. Mejor opción: ${best?.name || '—'} (${best?.overall || '—'})`}</Text>
+          )}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+// ─── Sección 5: Cambios de partido ────────────────────────────
+function MatchSubsSection({ formation, squad, bench }) {
+  const slots = FORMATIONS[formation]?.slots || [];
+  const benchPlayers = Object.values(bench).filter(Boolean);
+
+  const subs = useMemo(() => {
+    if (!benchPlayers.length) return [];
+    return slots.filter(sl => squad[sl.id]).map(sl => {
+      const cur = squad[sl.id];
+      const curVal = matchScore(cur, sl.position) * cur.overall;
+      const best = benchPlayers
+        .map(p => ({ player: p, val: matchScore(p, sl.position) * p.overall }))
+        .filter(x => x.val > curVal)
+        .sort((a, b) => b.val - a.val)[0];
+      if (!best) return null;
+      return { slot: sl, out: cur, in: best.player, posScore: matchScore(cur, sl.position) };
+    }).filter(Boolean)
+      .sort((a, b) => (b.in.overall - b.out.overall + (b.posScore < 1 ? 8 : 0)) - (a.in.overall - a.out.overall + (a.posScore < 1 ? 8 : 0)))
+      .slice(0, 4);
+  }, [slots, squad, bench]);
+
+  return (
+    <View style={s.card}>
+      <SectionHeader icon="git-compare-outline" title="Cambios de partido"
+        subtitle={!benchPlayers.length ? 'Asigna suplentes en la Pizarra' : `${subs.length} cambio${subs.length !== 1 ? 's' : ''} recomendado${subs.length !== 1 ? 's' : ''}`} />
+      {!benchPlayers.length ? <Text style={s.emptyHint}>Llena el banco de suplentes para ver sugerencias de cambios.</Text>
+        : subs.length === 0 ? <View style={s.successRow}><Ionicons name="checkmark-circle" size={20} color="#22c55e" /><Text style={s.successText}>El once actual es óptimo con los suplentes disponibles.</Text></View>
+        : subs.map(({ slot, out: outP, in: inP, posScore }) => (
+          <View key={slot.id} style={s.subRow}>
+            <View style={{ flex: 1 }}>
+              <View style={s.subLine}>
+                <Ionicons name="arrow-down-circle" size={14} color="#ef4444" />
+                <Text style={s.subOut} numberOfLines={1}>{outP.name}</Text>
+                {posScore < 1 && <Ionicons name="warning-outline" size={11} color="#f59e0b" />}
+                <Text style={s.ovrSmall}>{outP.overall}</Text>
+              </View>
+              <View style={s.subLine}>
+                <Ionicons name="arrow-up-circle" size={14} color="#22c55e" />
+                <Text style={s.subIn} numberOfLines={1}>{inP.name}</Text>
+                <Text style={[s.ovrSmall, { color: '#22c55e' }]}>{inP.overall}</Text>
+              </View>
+            </View>
+            <View style={[s.posBadge, { alignSelf: 'center', marginLeft: 8 }]}><Text style={s.posText}>{slot.label}</Text></View>
+          </View>
+        ))
+      }
+    </View>
+  );
+}
+
+// ─── Sección 6: Contra-formación ──────────────────────────────
+const FORM_PROFILE = {
+  '4-3-3':{'def':4,'mid':3,'att':3},'4-3-3 (A)':{'def':4,'mid':2,'att':4},'4-3-3 (D)':{'def':5,'mid':3,'att':3},
+  '4-4-2':{'def':4,'mid':4,'att':2},'4-4-2 ♦':{'def':4,'mid':4,'att':2},
+  '4-2-3-1':{'def':4,'mid':5,'att':1},'4-2-3-1 (W)':{'def':4,'mid':5,'att':1},
+  '4-5-1':{'def':4,'mid':5,'att':1},'4-1-4-1':{'def':4,'mid':5,'att':1},
+  '4-1-2-1-2':{'def':4,'mid':4,'att':2},'4-3-1-2':{'def':4,'mid':4,'att':2},
+  '4-1-3-2':{'def':4,'mid':4,'att':2},'4-3-2-1':{'def':4,'mid':5,'att':1},'4-4-1-1':{'def':4,'mid':4,'att':2},
+  '3-4-3':{'def':3,'mid':4,'att':3},'3-4-1-2':{'def':3,'mid':5,'att':2},'3-5-2':{'def':3,'mid':5,'att':2},
+  '5-3-2':{'def':5,'mid':3,'att':2},'5-4-1':{'def':5,'mid':4,'att':1},'5-2-2-1':{'def':5,'mid':4,'att':1},
+};
+const WHY = {
+  defensive:'El rival ataca con muchos hombres — refuerza la línea defensiva',
+  midfield: 'El rival domina el medio — iguala o supera su número de centrocampistas',
+  attacking:'El rival es conservador — presiona con más atacantes para superarlos',
+  balanced: 'Formación equilibrada que se adapta bien al rival',
+};
+
+function CounterFormationSection({ squad, bench, reserves }) {
+  const [rival, setRival] = useState(null);
+  const playerPool = useMemo(() => {
+    const all = [...Object.values(squad),...Object.values(bench),...Object.values(reserves)].filter(Boolean);
+    const seen = new Set();
+    return all.filter(p => { if (seen.has(p.name)) return false; seen.add(p.name); return true; });
+  }, [squad, bench, reserves]);
+
+  const counters = useMemo(() => {
+    if (!rival || playerPool.length < 3) return [];
+    const rp = FORM_PROFILE[rival];
+    return Object.entries(FORM_PROFILE).map(([name, mp]) => {
+      let score = 0, reason = 'balanced';
+      if (mp.def >= rp.att + 1) { score += 3; reason = 'defensive'; }
+      else if (mp.def >= rp.att) score += 1;
+      if (mp.mid >= rp.mid)     { score += 2; if (reason === 'balanced') reason = 'midfield'; }
+      if (mp.att > rp.att)      { score += 1; if (reason === 'balanced') reason = 'attacking'; }
+      const squadScore = scoreFormation(FORMATIONS[name]?.slots || [], playerPool);
+      return { name, score, reason, squadScore };
+    }).sort((a, b) => (b.score * 100 + b.squadScore) - (a.score * 100 + a.squadScore)).slice(0, 3);
+  }, [rival, playerPool]);
+
+  const rivals = Object.keys(FORM_PROFILE);
+  return (
+    <View style={s.card}>
+      <SectionHeader icon="shield-half-outline" title="Táctica vs rival" subtitle="Elige la formación del rival" />
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.depthChipRow} style={s.depthChipScroll}>
+        {rivals.map(f => (
+          <TouchableOpacity key={f} style={[s.depthChip, rival===f && s.depthChipActive]} onPress={() => setRival(rival===f ? null : f)}>
+            <Text style={[s.depthChipText, rival===f && s.depthChipTextActive]}>{f}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+      {!rival ? <Text style={[s.emptyHint,{marginTop:8}]}>Selecciona la formación del rival para ver la mejor táctica.</Text>
+        : playerPool.length < 3 ? <Text style={s.emptyHint}>Añade jugadores a la pizarra para ver recomendaciones.</Text>
+        : <>
+          <Text style={[s.subheading, { marginTop: 12 }]}>Mejores formaciones contra {rival}</Text>
+          {counters.map((c, i) => (
+            <View key={c.name} style={[s.formRow, i===0 && s.formRowActive]}>
+              <View style={[s.rankBadge, { backgroundColor: i===0?'#1e3a5f':'transparent', borderColor: i===0?'#3b82f6':'#334155' }]}>
+                <Text style={[s.rankText, { color: i===0?'#60a5fa':'#64748b' }]}>{i+1}</Text>
+              </View>
+              <View style={{ flex:1 }}>
+                <Text style={[s.formName, i===0&&{color:'#f1f5f9'}]}>{c.name}</Text>
+                <Text style={{ color:'#475569', fontSize:10, marginTop:2 }}>{WHY[c.reason]}</Text>
+              </View>
+              <Text style={[s.formScore, i===0&&{color:'#60a5fa'}]}>{c.squadScore}</Text>
+            </View>
+          ))}
+          <TipBox text={`Contra ${rival}: usa ${counters[0]?.name}. ${WHY[counters[0]?.reason]}.`} />
+        </>
+      }
+    </View>
+  );
+}
+
 // ─── Main ────────────────────────────────────────────────────────
 export default function AnalysisScreen({ navigation }) {
   const { formation, squad, bench, reserves, loadedTeamId, loadedTeamName } = useSquadStore();
@@ -564,17 +739,11 @@ export default function AnalysisScreen({ navigation }) {
     <ScrollView style={s.container} contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
       <DepthChartSection squad={squad} bench={bench} reserves={reserves} />
       <GapsSection formation={formation} squad={squad} balance={balance} navigation={navigation} />
-      <BestFormationSection
-        currentFormation={formation}
-        squad={squad}
-        bench={bench}
-        reserves={reserves}
-      />
-      <RotationsSection
-        loadedTeamId={loadedTeamId}
-        loadedTeamName={loadedTeamName}
-        navigation={navigation}
-      />
+      <WeakSpotsSection formation={formation} squad={squad} bench={bench} reserves={reserves} balance={balance} navigation={navigation} />
+      <BestFormationSection currentFormation={formation} squad={squad} bench={bench} reserves={reserves} />
+      <MatchSubsSection formation={formation} squad={squad} bench={bench} />
+      <CounterFormationSection squad={squad} bench={bench} reserves={reserves} />
+      <RotationsSection loadedTeamId={loadedTeamId} loadedTeamName={loadedTeamName} navigation={navigation} />
     </ScrollView>
   );
 }
@@ -685,6 +854,13 @@ const s = StyleSheet.create({
   depthLegend:     { flexDirection: 'row', gap: 14, marginTop: 12, flexWrap: 'wrap' },
   depthLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   depthLegendText: { color: '#64748b', fontSize: 11 },
+
+  // Match subs
+  subRow:   { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#0f172a' },
+  subLine:  { flexDirection: 'row', alignItems: 'center', gap: 6, marginVertical: 2 },
+  subOut:   { flex: 1, color: '#94a3b8', fontSize: 13 },
+  subIn:    { flex: 1, color: '#f1f5f9', fontSize: 13, fontWeight: '600' },
+  ovrSmall: { color: '#64748b', fontSize: 11, fontWeight: '700', minWidth: 22, textAlign: 'right' },
 
   exclusiveBlock:   { marginTop: 14 },
   exclusiveTitle:   { color: '#475569', fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 },

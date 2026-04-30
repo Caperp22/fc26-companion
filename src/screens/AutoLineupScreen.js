@@ -604,6 +604,21 @@ export default function AutoLineupScreen({ route, navigation }) {
       {/* Resultados */}
       {suggestions && (
         <>
+          {/* #9 Comparativa rápida titular vs segunda */}
+          <View style={s.compareRow}>
+            <View style={s.compareBox}>
+              <Text style={s.compareLabel}>Titular</Text>
+              <Text style={[s.compareOvr, { color: OVR_BG(suggestions.first.score) }]}>{suggestions.first.score}</Text>
+              <Text style={s.compareInfo}>{Object.keys(suggestions.first.assignment).length}/11 jugadores</Text>
+            </View>
+            <View style={s.compareVs}><Text style={s.compareVsText}>VS</Text></View>
+            <View style={s.compareBox}>
+              <Text style={s.compareLabel}>Segunda</Text>
+              <Text style={[s.compareOvr, { color: OVR_BG(suggestions.second.score) }]}>{suggestions.second.score}</Text>
+              <Text style={s.compareInfo}>{Object.keys(suggestions.second.assignment).length}/11 jugadores</Text>
+            </View>
+          </View>
+
           <SuggestionCard
             title="Alineación titular"
             formation={suggestions.bestForm || formation}
@@ -730,6 +745,14 @@ const s = StyleSheet.create({
 
   loadBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#1d4ed8', borderRadius: 10, paddingVertical: 11, marginTop: 10 },
   loadBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+
+  compareRow:  { flexDirection: 'row', backgroundColor: '#1e293b', borderRadius: 14, borderWidth: 1, borderColor: '#334155', overflow: 'hidden' },
+  compareBox:  { flex: 1, alignItems: 'center', paddingVertical: 14, gap: 2 },
+  compareLabel:{ color: '#64748b', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  compareOvr:  { fontSize: 28, fontWeight: '900' },
+  compareInfo: { color: '#475569', fontSize: 11 },
+  compareVs:   { width: 1, backgroundColor: '#334155', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 14 },
+  compareVsText: { color: '#334155', fontSize: 10, fontWeight: '800', position: 'absolute' },
 });
 
 // ─── Estilos del modal ────────────────────────────────────────
