@@ -173,6 +173,33 @@ function FormationPickerModal({ visible, currentFormation, onSelect, onClose }) 
   );
 }
 
+// ─── Foto con badge OVR (reutilizada en RosterPickerModal) ─────
+function PlayerFace({ player, size = 46 }) {
+  const [err, setErr] = useState(false);
+  const bg = getOverallBg(player.overall);
+  return (
+    <View style={{ width: size, height: size }}>
+      {player.faceUrl && !err ? (
+        <Image
+          source={{ uri: player.faceUrl }}
+          style={{ width: size, height: size, borderRadius: size / 2 }}
+          contentFit="cover"
+          onError={() => setErr(true)}
+        />
+      ) : (
+        <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: bg, justifyContent: 'center', alignItems: 'center' }}>
+          <Text style={{ color: '#fff', fontSize: Math.round(size * 0.38), fontWeight: '800' }}>
+            {player.name?.[0] ?? '?'}
+          </Text>
+        </View>
+      )}
+      <View style={{ position: 'absolute', bottom: -1, right: -2, backgroundColor: bg, borderRadius: 4, paddingHorizontal: 3, borderWidth: 1.5, borderColor: '#0f172a' }}>
+        <Text style={{ color: '#fff', fontSize: 9, fontWeight: '900', lineHeight: 13 }}>{player.overall}</Text>
+      </View>
+    </View>
+  );
+}
+
 // ─── Modal selector desde plantilla ───────────────────────────
 function RosterPickerModal({ visible, slotLabel, slotPosition, players, onSelect, onScouting, onClose }) {
   const { natural, others } = useMemo(() => {
@@ -182,18 +209,14 @@ function RosterPickerModal({ visible, slotLabel, slotPosition, players, onSelect
     return { natural: nat.sort((a,b) => b.overall - a.overall), others: oth };
   }, [players, slotPosition]);
 
-  const OVR_BG = (o) => o >= 85 ? '#d97706' : o >= 75 ? '#16a34a' : '#4b5563';
-
   const renderRow = (p) => (
     <TouchableOpacity key={p.name} style={rpModal.row} onPress={() => onSelect(p)} activeOpacity={0.7}>
-      <View style={[rpModal.ovrBadge, { backgroundColor: OVR_BG(p.overall) }]}>
-        <Text style={rpModal.ovrText}>{p.overall}</Text>
-      </View>
+      <PlayerFace player={p} size={50} />
       <View style={{ flex: 1 }}>
         <Text style={rpModal.name} numberOfLines={1}>{p.name}</Text>
         <Text style={rpModal.meta}>{p.position}  ·  {p.club || '—'}</Text>
       </View>
-      <Ionicons name="add-circle" size={22} color="#3b82f6" />
+      <Ionicons name="add-circle" size={24} color="#3b82f6" />
     </TouchableOpacity>
   );
 

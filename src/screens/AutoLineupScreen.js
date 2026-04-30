@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -68,14 +69,39 @@ const FORMATION_KEYS = Object.keys(FORMATIONS);
 const OVR_BG = (ovr) => ovr >= 85 ? '#d97706' : ovr >= 75 ? '#16a34a' : '#4b5563';
 const parsePlayer = (data) => { try { return JSON.parse(data); } catch { return {}; } };
 
+// ── Foto con badge OVR ────────────────────────────────────────
+function PlayerFace({ player, size = 48 }) {
+  const [err, setErr] = useState(false);
+  const bg = OVR_BG(player.overall);
+  return (
+    <View style={{ width: size, height: size }}>
+      {player.faceUrl && !err ? (
+        <Image
+          source={{ uri: player.faceUrl }}
+          style={{ width: size, height: size, borderRadius: size / 2 }}
+          contentFit="cover"
+          onError={() => setErr(true)}
+        />
+      ) : (
+        <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: bg, justifyContent: 'center', alignItems: 'center' }}>
+          <Text style={{ color: '#fff', fontSize: Math.round(size * 0.38), fontWeight: '800' }}>
+            {player.name?.[0] ?? '?'}
+          </Text>
+        </View>
+      )}
+      <View style={{ position: 'absolute', bottom: -1, right: -2, backgroundColor: bg, borderRadius: 4, paddingHorizontal: 3, borderWidth: 1.5, borderColor: '#1e293b' }}>
+        <Text style={{ color: '#fff', fontSize: 9, fontWeight: '900', lineHeight: 13 }}>{player.overall}</Text>
+      </View>
+    </View>
+  );
+}
+
 // ── Fila de jugador en plantilla ──────────────────────────────
 function RosterItem({ item, onRemove }) {
   const player = useMemo(() => parsePlayer(item.playerData), [item.playerData]);
   return (
     <View style={s.rosterItem}>
-      <View style={[s.ovrBadge, { backgroundColor: OVR_BG(player.overall) }]}>
-        <Text style={s.ovrText}>{player.overall}</Text>
-      </View>
+      <PlayerFace player={player} size={46} />
       <View style={{ flex: 1 }}>
         <Text style={s.rosterName} numberOfLines={1}>{item.playerName}</Text>
         <Text style={s.rosterMeta}>{player.position}  ·  {player.club || '—'}</Text>
@@ -201,9 +227,7 @@ function AddPlayerModal({ visible, onClose, onAdd, existingNames }) {
                   onPress={() => { if (!already) { onAdd(item); handleClose(); } }}
                   disabled={already}
                 >
-                  <View style={[am.ovrBadge, { backgroundColor: OVR_BG(item.overall) }]}>
-                    <Text style={am.ovrText}>{item.overall}</Text>
-                  </View>
+                  <PlayerFace player={item} size={50} />
                   <View style={{ flex: 1 }}>
                     <Text style={[am.playerName, already && am.playerNameDim]} numberOfLines={1}>
                       {item.name}
@@ -212,7 +236,7 @@ function AddPlayerModal({ visible, onClose, onAdd, existingNames }) {
                   </View>
                   {already
                     ? <Text style={am.alreadyText}>En plantilla</Text>
-                    : <Ionicons name="add-circle" size={22} color="#3b82f6" />
+                    : <Ionicons name="add-circle" size={24} color="#3b82f6" />
                   }
                 </TouchableOpacity>
               );
