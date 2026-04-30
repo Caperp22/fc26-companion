@@ -153,6 +153,7 @@ export const FORMATIONS = {
 
   // ── Variantes ────────────────────────────────────────────────────────────
 
+  // (A) = Atacante: triángulo de medio apuntando arriba — MC/MCO/MC, delanteros muy abiertos
   '4-3-3 (A)': {
     slots: [
       { id: 'GK',   label: 'PO',  position: 'GK',  x: 0.50, y: 0.87 },
@@ -160,15 +161,16 @@ export const FORMATIONS = {
       { id: 'CB1',  label: 'DFC', position: 'CB',  x: 0.35, y: 0.71 },
       { id: 'CB2',  label: 'DFC', position: 'CB',  x: 0.65, y: 0.71 },
       { id: 'RB',   label: 'LD',  position: 'RB',  x: 0.88, y: 0.69 },
-      { id: 'LCM',  label: 'MC',  position: 'CM',  x: 0.22, y: 0.43 },
-      { id: 'CM',   label: 'MC',  position: 'CM',  x: 0.50, y: 0.40 },
-      { id: 'RCM',  label: 'MC',  position: 'CM',  x: 0.78, y: 0.43 },
-      { id: 'LW',   label: 'EI',  position: 'LW',  x: 0.10, y: 0.14 },
-      { id: 'ST',   label: 'DC',  position: 'ST',  x: 0.50, y: 0.08 },
-      { id: 'RW',   label: 'ED',  position: 'RW',  x: 0.90, y: 0.14 },
+      { id: 'LCM',  label: 'MC',  position: 'CM',  x: 0.22, y: 0.50 },
+      { id: 'CAM',  label: 'MCO', position: 'CAM', x: 0.50, y: 0.38 },
+      { id: 'RCM',  label: 'MC',  position: 'CM',  x: 0.78, y: 0.50 },
+      { id: 'LW',   label: 'EI',  position: 'LW',  x: 0.09, y: 0.15 },
+      { id: 'ST',   label: 'DC',  position: 'ST',  x: 0.50, y: 0.09 },
+      { id: 'RW',   label: 'ED',  position: 'RW',  x: 0.91, y: 0.15 },
     ],
   },
 
+  // (D) = Defensivo: triángulo de medio apuntando abajo — MCD/MC/MC, mediocampo compacto
   '4-3-3 (D)': {
     slots: [
       { id: 'GK',   label: 'PO',  position: 'GK',  x: 0.50, y: 0.87 },
@@ -176,12 +178,12 @@ export const FORMATIONS = {
       { id: 'CB1',  label: 'DFC', position: 'CB',  x: 0.35, y: 0.72 },
       { id: 'CB2',  label: 'DFC', position: 'CB',  x: 0.65, y: 0.72 },
       { id: 'RB',   label: 'LD',  position: 'RB',  x: 0.88, y: 0.70 },
-      { id: 'LCM',  label: 'MC',  position: 'CM',  x: 0.22, y: 0.53 },
-      { id: 'CM',   label: 'MC',  position: 'CM',  x: 0.50, y: 0.50 },
-      { id: 'RCM',  label: 'MC',  position: 'CM',  x: 0.78, y: 0.53 },
-      { id: 'LW',   label: 'EI',  position: 'LW',  x: 0.12, y: 0.28 },
-      { id: 'ST',   label: 'DC',  position: 'ST',  x: 0.50, y: 0.20 },
-      { id: 'RW',   label: 'ED',  position: 'RW',  x: 0.88, y: 0.28 },
+      { id: 'CDM',  label: 'MCD', position: 'CDM', x: 0.50, y: 0.60 },
+      { id: 'LCM',  label: 'MC',  position: 'CM',  x: 0.28, y: 0.48 },
+      { id: 'RCM',  label: 'MC',  position: 'CM',  x: 0.72, y: 0.48 },
+      { id: 'LW',   label: 'EI',  position: 'LW',  x: 0.12, y: 0.20 },
+      { id: 'ST',   label: 'DC',  position: 'ST',  x: 0.50, y: 0.13 },
+      { id: 'RW',   label: 'ED',  position: 'RW',  x: 0.88, y: 0.20 },
     ],
   },
 
