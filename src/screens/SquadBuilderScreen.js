@@ -78,7 +78,7 @@ const FORMATION_ORDER = [
 ];
 
 const POS_ES = {
-  GK: 'PO', LB: 'DFI', RB: 'DFD', CB: 'DFC',
+  GK: 'PO', LB: 'LI', RB: 'LD', CB: 'DFC',
   LWB: 'CAI', RWB: 'CAD',
   CDM: 'MCD', CM: 'MC', CAM: 'MCO',
   LM: 'MI', RM: 'MD',

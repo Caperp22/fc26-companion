@@ -13,11 +13,12 @@ import ShortlistScreen from '../screens/ShortlistScreen';
 import SquadBuilderScreen from '../screens/SquadBuilderScreen';
 import TeamsScreen from '../screens/TeamsScreen';
 
-const Tab          = createBottomTabNavigator();
-const SquadStack   = createNativeStackNavigator();
-const ShortStack   = createNativeStackNavigator();
-const LeaguesStack = createNativeStackNavigator();
-const AnalStack    = createNativeStackNavigator();
+const Tab            = createBottomTabNavigator();
+const SquadStack     = createNativeStackNavigator();
+const PlantillaStack = createNativeStackNavigator();
+const ShortStack     = createNativeStackNavigator();
+const LeaguesStack   = createNativeStackNavigator();
+const AnalStack      = createNativeStackNavigator();
 
 const HEADER = {
   headerStyle: { backgroundColor: '#0f172a' },
@@ -39,6 +40,16 @@ function SquadStackNavigator() {
         })}
       />
     </SquadStack.Navigator>
+  );
+}
+
+function PlantillaStackNavigator() {
+  return (
+    <PlantillaStack.Navigator screenOptions={HEADER}>
+      <PlantillaStack.Screen name="PlantillaTeams" component={TeamsScreen}       options={{ title: 'Mis Equipos' }} />
+      <PlantillaStack.Screen name="AutoLineup"     component={AutoLineupScreen}  options={({ route }) => ({ title: route.params?.teamName ?? 'Plantilla' })} />
+      <PlantillaStack.Screen name="PlayerDetail"   component={PlayerDetailScreen} options={{ title: 'Ficha del Jugador' }} />
+    </PlantillaStack.Navigator>
   );
 }
 
@@ -76,11 +87,12 @@ function AnalysisStackNavigator() {
 }
 
 const TAB_ICONS = {
-  Pizarra:     { on: 'football',      off: 'football-outline'      },
-  Objetivos:   { on: 'star',          off: 'star-outline'          },
-  Presupuesto: { on: 'wallet',        off: 'wallet-outline'        },
-  Ligas:       { on: 'trophy',        off: 'trophy-outline'        },
-  Analisis:    { on: 'analytics',     off: 'analytics-outline'     },
+  Pizarra:     { on: 'football',        off: 'football-outline'        },
+  Plantilla:   { on: 'people',          off: 'people-outline'          },
+  Objetivos:   { on: 'star',            off: 'star-outline'            },
+  Presupuesto: { on: 'wallet',          off: 'wallet-outline'          },
+  Ligas:       { on: 'trophy',          off: 'trophy-outline'          },
+  Analisis:    { on: 'analytics',       off: 'analytics-outline'       },
 };
 
 export default function AppNavigator() {
@@ -100,11 +112,12 @@ export default function AppNavigator() {
         },
       })}
     >
-      <Tab.Screen name="Pizarra"     component={SquadStackNavigator}    options={{ headerShown: false, tabBarLabel: 'Pizarra' }} />
-      <Tab.Screen name="Objetivos"   component={ShortlistStackNavigator} options={{ headerShown: false, tabBarLabel: 'Objetivos' }} />
-      <Tab.Screen name="Presupuesto" component={BudgetScreen}            options={{ title: 'Gestor Financiero', tabBarLabel: 'Presupuesto' }} />
-      <Tab.Screen name="Ligas"       component={LeaguesStackNavigator}   options={{ headerShown: false, tabBarLabel: 'Ligas' }} />
-      <Tab.Screen name="Analisis"    component={AnalysisStackNavigator}  options={{ headerShown: false, tabBarLabel: 'Análisis' }} />
+      <Tab.Screen name="Pizarra"     component={SquadStackNavigator}      options={{ headerShown: false, tabBarLabel: 'Pizarra' }} />
+      <Tab.Screen name="Plantilla"   component={PlantillaStackNavigator}  options={{ headerShown: false, tabBarLabel: 'Plantilla' }} />
+      <Tab.Screen name="Objetivos"   component={ShortlistStackNavigator}  options={{ headerShown: false, tabBarLabel: 'Objetivos' }} />
+      <Tab.Screen name="Presupuesto" component={BudgetScreen}             options={{ title: 'Gestor Financiero', tabBarLabel: 'Presupuesto' }} />
+      <Tab.Screen name="Ligas"       component={LeaguesStackNavigator}    options={{ headerShown: false, tabBarLabel: 'Ligas' }} />
+      <Tab.Screen name="Analisis"    component={AnalysisStackNavigator}   options={{ headerShown: false, tabBarLabel: 'Análisis' }} />
     </Tab.Navigator>
   );
 }

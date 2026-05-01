@@ -93,7 +93,7 @@ const parsePlayer = (data) => { try { return JSON.parse(data); } catch { return 
 const BENCH_IDS   = ['B0','B1','B2','B3','B4','B5','B6'];
 const RESERVE_IDS = ['R0','R1','R2','R3','R4'];
 const ALL_POS = ['GK','CB','LB','RB','LWB','RWB','CDM','CM','CAM','LM','RM','LW','RW','CF','ST'];
-const POS_ES  = { GK:'PO',CB:'DFC',LB:'DFI',RB:'DFD',LWB:'CAI',RWB:'CAD',CDM:'MCD',CM:'MC',CAM:'MCO',LM:'MI',RM:'MD',LW:'EI',RW:'ED',CF:'SD',ST:'DC' };
+const POS_ES  = { GK:'PO',CB:'DFC',LB:'LI',RB:'LD',LWB:'CAI',RWB:'CAD',CDM:'MCD',CM:'MC',CAM:'MCO',LM:'MI',RM:'MD',LW:'EI',RW:'ED',CF:'SD',ST:'DC' };
 
 // ── Foto con badge OVR ────────────────────────────────────────
 function PlayerFace({ player, size = 48 }) {

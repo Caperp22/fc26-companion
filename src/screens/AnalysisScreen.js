@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useMemo, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -126,7 +127,7 @@ const goToDetail = (navigation, player) =>
 
 // ─── Sección 0: Radar de profundidad por posición ──────────────
 const ALL_POSITIONS = ['GK','LB','CB','RB','LWB','RWB','CDM','CM','CAM','LM','RM','LW','RW','CF','ST'];
-const POS_ES = { GK:'PO',LB:'DFI',CB:'DFC',RB:'DFD',LWB:'CAI',RWB:'CAD',CDM:'MCD',CM:'MC',CAM:'MCO',LM:'MI',RM:'MD',LW:'EI',RW:'ED',CF:'SD',ST:'DC' };
+const POS_ES = { GK:'PO',LB:'LI',CB:'DFC',RB:'LD',LWB:'CAI',RWB:'CAD',CDM:'MCD',CM:'MC',CAM:'MCO',LM:'MI',RM:'MD',LW:'EI',RW:'ED',CF:'SD',ST:'DC' };
 
 const POS_COLOR = (pos) => {
   if (pos === 'GK') return '#b45309';
@@ -139,14 +140,14 @@ function DepthChartSection({ squad, bench, reserves }) {
   const [allLineups, setAllLineups] = useState([]);
   const [selectedId, setSelectedId] = useState('active');
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     try {
       const teams = getTeams();
       const flat = [];
       teams.forEach(t => getLineupsByTeam(t.id).forEach(l => flat.push({ ...l, teamName: t.name })));
       setAllLineups(flat);
     } catch {}
-  }, []);
+  }, []));
 
   const { viewSq, viewBn, viewRs } = useMemo(() => {
     if (selectedId === 'active') return { viewSq: squad, viewBn: bench, viewRs: reserves };
