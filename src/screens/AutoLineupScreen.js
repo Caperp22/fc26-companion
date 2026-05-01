@@ -756,11 +756,25 @@ export default function AutoLineupScreen({ route, navigation }) {
 
     const bestForm = formScores[0].f;
     if (bestForm !== formation) setFormation(bestForm);
-    const first  = autoAssign(bestForm, players);
-    const second = autoAssign(bestForm, first.remaining);
+    const first = autoAssign(bestForm, players);
+
+    // Evaluar formación óptima para los jugadores restantes de forma independiente
+    const altFormScores = first.remaining.length >= 11
+      ? FORMATION_KEYS.map(f => {
+          const result = autoAssign(f, first.remaining);
+          const fitRatio = result.naturalFits / totalSlots;
+          const rankScore = result.score * (0.70 + 0.30 * fitRatio);
+          return { f, score: result.score, naturalFits: result.naturalFits, rankScore };
+        }).sort((a, b) => b.rankScore - a.rankScore)
+      : formScores; // si no hay 11 sobrantes, reutilizamos el ranking anterior
+
+    const bestFormAlt = altFormScores[0].f;
+    const second = autoAssign(bestFormAlt, first.remaining);
+
     setSuggestions({
-      first, second, bestForm,
+      first, second, bestForm, bestFormAlt,
       topForms:      formScores.slice(0, 5),
+      topFormsAlt:   altFormScores.slice(0, 5),
       excludedCount: excluded.length,
       excludedNames: excluded.map(r => r.playerName),
     });
@@ -768,7 +782,8 @@ export default function AutoLineupScreen({ route, navigation }) {
 
   const handleSaveBoth = () => {
     if (!suggestions || !teamId) return;
-    const f = suggestions.bestForm || formation;
+    const f    = suggestions.bestForm    || formation;
+    const fAlt = suggestions.bestFormAlt || f;
     const secondPlayers = Object.values(suggestions.second.assignment).filter(Boolean);
 
     // Titular: bench = primera mitad de segunda XI
@@ -795,7 +810,7 @@ export default function AutoLineupScreen({ route, navigation }) {
     const altBench = {};
     BENCH_IDS.forEach((id, i) => { if (altPool[i]) altBench[id] = altPool[i]; });
 
-    const r2 = saveLineup({ teamId, lineupId: null, name: 'Alternativa', formation: f,
+    const r2 = saveLineup({ teamId, lineupId: null, name: 'Alternativa', formation: fAlt,
       squad: suggestions.second.assignment, bench: altBench, reserves: {} });
 
     if (!r2.ok) {
@@ -808,9 +823,9 @@ export default function AutoLineupScreen({ route, navigation }) {
     }
   };
 
-  const handleLoad = (assignment, lineupName, withBench = false) => {
+  const handleLoad = (assignment, lineupName, withBench = false, formOverride = null) => {
     let bench = {}, reserves = {};
-    const f = suggestions?.bestForm || formation;
+    const f = formOverride || suggestions?.bestForm || formation;
 
     if (withBench && suggestions) {
       const secondPlayers = Object.values(suggestions.second.assignment).filter(Boolean);
@@ -957,13 +972,21 @@ export default function AutoLineupScreen({ route, navigation }) {
       {/* Resultados */}
       {suggestions && (
         <>
-          {/* Formación óptima detectada */}
+          {/* Formaciones óptimas detectadas */}
           <View style={s.bestFormRow}>
             <Ionicons name="sparkles" size={14} color="#fbbf24" />
-            <Text style={s.bestFormLabel}>Formación óptima detectada:</Text>
+            <Text style={s.bestFormLabel}>Titular:</Text>
             <View style={s.bestFormBadge}>
               <Text style={s.bestFormBadgeText}>{suggestions.bestForm}</Text>
             </View>
+            {suggestions.bestFormAlt && suggestions.bestFormAlt !== suggestions.bestForm && (
+              <>
+                <Text style={[s.bestFormLabel, { marginLeft: 8 }]}>Alternativa:</Text>
+                <View style={[s.bestFormBadge, { backgroundColor: '#1e1b4b' }]}>
+                  <Text style={[s.bestFormBadgeText, { color: '#a78bfa' }]}>{suggestions.bestFormAlt}</Text>
+                </View>
+              </>
+            )}
           </View>
           {suggestions.topForms?.length > 1 && (
             <View style={s.topFormsRow}>
@@ -992,13 +1015,13 @@ export default function AutoLineupScreen({ route, navigation }) {
             <View style={s.compareBox}>
               <Text style={s.compareLabel}>Titular</Text>
               <Text style={[s.compareOvr, { color: OVR_BG(suggestions.first.score) }]}>{suggestions.first.score}</Text>
-              <Text style={s.compareInfo}>{Object.keys(suggestions.first.assignment).length}/11 jugadores</Text>
+              <Text style={s.compareInfo}>{suggestions.bestForm}</Text>
             </View>
             <View style={s.compareVs}><Text style={s.compareVsText}>VS</Text></View>
             <View style={s.compareBox}>
               <Text style={s.compareLabel}>Segunda</Text>
               <Text style={[s.compareOvr, { color: OVR_BG(suggestions.second.score) }]}>{suggestions.second.score}</Text>
-              <Text style={s.compareInfo}>{Object.keys(suggestions.second.assignment).length}/11 jugadores</Text>
+              <Text style={s.compareInfo}>{suggestions.bestFormAlt || suggestions.bestForm}</Text>
             </View>
           </View>
 
@@ -1007,14 +1030,14 @@ export default function AutoLineupScreen({ route, navigation }) {
             formation={suggestions.bestForm || formation}
             assignment={suggestions.first.assignment}
             score={suggestions.first.score}
-            onLoad={() => handleLoad(suggestions.first.assignment, 'Titular', true)}
+            onLoad={() => handleLoad(suggestions.first.assignment, 'Titular', true, suggestions.bestForm)}
           />
           <SuggestionCard
             title="Segunda alineación"
-            formation={suggestions.bestForm || formation}
+            formation={suggestions.bestFormAlt || suggestions.bestForm || formation}
             assignment={suggestions.second.assignment}
             score={suggestions.second.score}
-            onLoad={() => handleLoad(suggestions.second.assignment, 'Alternativa', false)}
+            onLoad={() => handleLoad(suggestions.second.assignment, 'Alternativa', false, suggestions.bestFormAlt)}
           />
 
           <TouchableOpacity style={s.saveAllBtn} onPress={handleSaveBoth}>
