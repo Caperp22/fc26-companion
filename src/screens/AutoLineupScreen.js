@@ -51,22 +51,36 @@ function autoAssign(formation, playerPool) {
   const slots = FORMATIONS[formation]?.slots || [];
   const available = [...playerPool];
   const assignment = {};
-  for (const slot of slots) {
-    let bestVal = 0, bestIdx = -1;
-    available.forEach((p, i) => {
-      const v = matchScore(p, slot.position) * p.overall;
-      if (v > bestVal) { bestVal = v; bestIdx = i; }
+
+  // 3 pasadas: natural → adyacente → fuera de posición
+  // Garantiza que cualquier jugador en posición natural siempre
+  // tiene prioridad sobre uno adyacente, sin importar el OVR.
+  const fillPass = (tierFn) => {
+    slots.forEach(slot => {
+      if (assignment[slot.id]) return;
+      let bestOvr = -1, bestIdx = -1;
+      available.forEach((p, i) => {
+        if (!tierFn(p, slot.position)) return;
+        if (p.overall > bestOvr) { bestOvr = p.overall; bestIdx = i; }
+      });
+      if (bestIdx >= 0) { assignment[slot.id] = available[bestIdx]; available.splice(bestIdx, 1); }
     });
-    if (bestIdx >= 0) {
-      assignment[slot.id] = available[bestIdx];
-      available.splice(bestIdx, 1);
-    }
-  }
+  };
+
+  fillPass((p, pos) => matchScore(p, pos) === 1.0);   // posición natural
+  fillPass((p, pos) => matchScore(p, pos) === 0.7);   // posición adyacente
+  fillPass((p, pos) => matchScore(p, pos) === 0.45);  // fuera de posición
+
   const vals = Object.values(assignment);
-  const score = vals.length
-    ? Math.round(vals.reduce((s, p) => s + p.overall, 0) / vals.length)
-    : 0;
-  return { assignment, remaining: available, score };
+  const avgOVR = vals.length ? Math.round(vals.reduce((s, p) => s + p.overall, 0) / vals.length) : 0;
+
+  // Contar encajes naturales para el ranking de formaciones
+  const naturalFits = Object.entries(assignment).filter(([slotId, player]) => {
+    const slot = slots.find(s => s.id === slotId);
+    return slot && matchScore(player, slot.position) === 1.0;
+  }).length;
+
+  return { assignment, remaining: available, score: avgOVR, naturalFits };
 }
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -143,10 +157,21 @@ function SuggestionCard({ title, formation, assignment, score, onLoad }) {
   const slots = FORMATIONS[formation]?.slots || [];
   const filled = slots.filter(sl => assignment[sl.id]);
 
+  const naturalCount = filled.filter(sl => {
+    const p = assignment[sl.id];
+    return (p.positions || p.position || '').split(',').map(x => x.trim()).includes(sl.position);
+  }).length;
+
   return (
     <View style={s.suggCard}>
       <View style={s.suggHeader}>
-        <Text style={s.suggTitle}>{title}</Text>
+        <View>
+          <Text style={s.suggTitle}>{title}</Text>
+          <Text style={s.suggFitsCount}>
+            <Text style={{ color: '#22c55e', fontWeight: '800' }}>{naturalCount}</Text>
+            /{filled.length} en posición natural
+          </Text>
+        </View>
         <View style={s.suggBadges}>
           <View style={s.formBadge}>
             <Text style={s.formBadgeText}>{formation}</Text>
@@ -162,35 +187,31 @@ function SuggestionCard({ title, formation, assignment, score, onLoad }) {
       ) : (
         filled.map(sl => {
           const p = assignment[sl.id];
-          const isNatural = (p.positions || p.position || '')
-            .split(',').map(x => x.trim()).includes(sl.position);
+          const ms = matchScore(p, sl.position);
+          const isNatural  = ms === 1.0;
+          const isAdjacent = ms === 0.7;
+          const nameStyle  = isNatural ? s.suggPlayerName
+            : isAdjacent ? s.suggPlayerAdj : s.suggPlayerOff;
           return (
             <View key={sl.id} style={s.suggRow}>
               <View style={[s.posBadge, { backgroundColor: POSITION_BG(sl.position) }]}>
                 <Text style={s.posText}>{sl.label}</Text>
               </View>
-              <Text
-                style={[s.suggPlayerName, !isNatural && s.suggPlayerOff]}
-                numberOfLines={1}
-              >
-                {p.name}
-              </Text>
-              {!isNatural && (
-                <Ionicons name="warning-outline" size={12} color="#f59e0b" style={{ marginRight: 4 }} />
-              )}
+              <Text style={nameStyle} numberOfLines={1}>{p.name}</Text>
+              {isAdjacent && <Ionicons name="alert-circle-outline" size={12} color="#f59e0b" style={{ marginRight: 4 }} />}
+              {!isNatural && !isAdjacent && <Ionicons name="warning-outline" size={12} color="#ef4444" style={{ marginRight: 4 }} />}
               <Text style={[s.suggOvr, { color: OVR_BG(p.overall) }]}>{p.overall}</Text>
             </View>
           );
         })
       )}
 
-      {filled.some(sl => {
-        const p = assignment[sl.id];
-        return p && !(p.positions || p.position || '').split(',').map(x => x.trim()).includes(sl.position);
-      }) && (
+      {naturalCount < filled.length && (
         <View style={s.offPosNote}>
-          <Ionicons name="warning-outline" size={12} color="#f59e0b" />
-          <Text style={s.offPosText}>nombre en naranja = fuera de posición natural</Text>
+          <View style={[s.offPosDot, { backgroundColor: '#f59e0b' }]} />
+          <Text style={s.offPosText}>adyacente</Text>
+          <View style={[s.offPosDot, { backgroundColor: '#ef4444', marginLeft: 8 }]} />
+          <Text style={s.offPosText}>fuera de posición</Text>
         </View>
       )}
 
@@ -571,11 +592,17 @@ export default function AutoLineupScreen({ route, navigation }) {
       return;
     }
     const players = roster.map(r => parsePlayer(r.playerData)).filter(p => p.overall);
-    // Evaluar todas las formaciones y ordenar por puntuación
+    // Evaluar todas las formaciones con score ponderado:
+    // rankScore = OVR_promedio * (0.7 + 0.3 * ratio_encaje_natural)
+    // Así se prefiere una formación con más jugadores en posición natural
+    // aunque el OVR promedio sea un poco menor.
+    const totalSlots = 11;
     const formScores = FORMATION_KEYS.map(f => {
-      const { score } = autoAssign(f, players);
-      return { f, score };
-    }).sort((a, b) => b.score - a.score);
+      const result = autoAssign(f, players);
+      const fitRatio = result.naturalFits / totalSlots;
+      const rankScore = result.score * (0.70 + 0.30 * fitRatio);
+      return { f, score: result.score, naturalFits: result.naturalFits, rankScore };
+    }).sort((a, b) => b.rankScore - a.rankScore);
 
     const bestForm = formScores[0].f;
     if (bestForm !== formation) setFormation(bestForm);
@@ -752,10 +779,11 @@ export default function AutoLineupScreen({ route, navigation }) {
           </View>
           {suggestions.topForms?.length > 1 && (
             <View style={s.topFormsRow}>
-              {suggestions.topForms.map(({ f, score }, i) => (
+              {suggestions.topForms.map(({ f, score, naturalFits }, i) => (
                 <View key={f} style={[s.topFormChip, i === 0 && s.topFormChipBest]}>
                   <Text style={[s.topFormChipText, i === 0 && s.topFormChipTextBest]}>{f}</Text>
                   <Text style={[s.topFormChipScore, i === 0 && { color: '#fbbf24' }]}>{score}</Text>
+                  <Text style={s.topFormChipFits}>{naturalFits}/11 ✓</Text>
                 </View>
               ))}
             </View>
@@ -898,11 +926,14 @@ const s = StyleSheet.create({
   suggRow:       { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: '#0f172a' },
   posBadge:      { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5, minWidth: 30, alignItems: 'center' },
   posText:       { color: '#fff', fontSize: 10, fontWeight: '800' },
+  suggFitsCount:  { color: '#64748b', fontSize: 11, marginTop: 1 },
   suggPlayerName: { flex: 1, color: '#cbd5e1', fontSize: 13, fontWeight: '600' },
-  suggPlayerOff:  { color: '#f59e0b' },
+  suggPlayerAdj:  { flex: 1, color: '#f59e0b', fontSize: 13, fontWeight: '600' },
+  suggPlayerOff:  { flex: 1, color: '#ef4444', fontSize: 13, fontWeight: '600' },
   suggOvr:       { fontSize: 13, fontWeight: '800', minWidth: 24, textAlign: 'right' },
   suggEmpty:     { color: '#475569', fontSize: 13, paddingVertical: 8 },
-  offPosNote:    { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 },
+  offPosNote:    { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 },
+  offPosDot:     { width: 8, height: 8, borderRadius: 4 },
   offPosText:    { color: '#94a3b8', fontSize: 11 },
 
   loadBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#1d4ed8', borderRadius: 10, paddingVertical: 11, marginTop: 10 },
@@ -930,6 +961,7 @@ const s = StyleSheet.create({
   topFormChipText:      { color: '#475569', fontSize: 10, fontWeight: '700' },
   topFormChipTextBest:  { color: '#fbbf24' },
   topFormChipScore:     { color: '#475569', fontSize: 13, fontWeight: '900' },
+  topFormChipFits:      { color: '#22c55e', fontSize: 9, fontWeight: '700' },
 
   compareRow:  { flexDirection: 'row', backgroundColor: '#1e293b', borderRadius: 14, borderWidth: 1, borderColor: '#334155', overflow: 'hidden' },
   compareBox:  { flex: 1, alignItems: 'center', paddingVertical: 14, gap: 2 },

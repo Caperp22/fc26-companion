@@ -42,11 +42,20 @@ const autoAssign = (formation, playerPool) => {
   const slots = FORMATIONS[formation]?.slots || [];
   const available = [...playerPool];
   const assignment = {};
-  for (const slot of slots) {
-    let bestVal = 0, bestIdx = -1;
-    available.forEach((p, i) => { const v = matchScore(p, slot.position) * p.overall; if (v > bestVal) { bestVal = v; bestIdx = i; } });
-    if (bestIdx >= 0) { assignment[slot.id] = available[bestIdx]; available.splice(bestIdx, 1); }
-  }
+  const fillPass = (tierFn) => {
+    slots.forEach(slot => {
+      if (assignment[slot.id]) return;
+      let bestOvr = -1, bestIdx = -1;
+      available.forEach((p, i) => {
+        if (!tierFn(p, slot.position)) return;
+        if (p.overall > bestOvr) { bestOvr = p.overall; bestIdx = i; }
+      });
+      if (bestIdx >= 0) { assignment[slot.id] = available[bestIdx]; available.splice(bestIdx, 1); }
+    });
+  };
+  fillPass((p, pos) => matchScore(p, pos) === 1.0);
+  fillPass((p, pos) => matchScore(p, pos) === 0.7);
+  fillPass((p, pos) => matchScore(p, pos) === 0.45);
   return { assignment, remaining: available };
 };
 
