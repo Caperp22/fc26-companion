@@ -7,6 +7,7 @@ import {
     FlatList,
     Modal,
     ScrollView,
+    Share,
     StyleSheet,
     Text,
     TextInput,
@@ -268,7 +269,10 @@ function RosterPickerModal({ visible, slotLabel, slotPosition, players, onSelect
 
 
 // ─── Bench / Reserve card ───────────────────────────────────────
-function BenchCard({ label, player, pendingPlayer, isSelected, onPress, onLongPress, style }) {
+function BenchCard({ label, player, pendingPlayer, isSelected, onPress, onLongPress, style, statusMap }) {
+  const pStatus = player ? (statusMap?.[player.name] || '') : '';
+  const statusColor = pStatus === 'lesionado' ? '#ef4444' : pStatus === 'suspendido' ? '#f59e0b' : null;
+
   return (
     <TouchableOpacity
       style={[
@@ -282,9 +286,22 @@ function BenchCard({ label, player, pendingPlayer, isSelected, onPress, onLongPr
     >
       {player ? (
         <>
-          <PlayerFace player={player} size={40} />
+          <View style={{ position: 'relative' }}>
+            <PlayerFace player={player} size={40} />
+            {statusColor && (
+              <View style={{
+                position: 'absolute', top: -3, right: -3,
+                width: 14, height: 14, borderRadius: 7,
+                backgroundColor: statusColor,
+                borderWidth: 1.5, borderColor: '#0f172a',
+                justifyContent: 'center', alignItems: 'center',
+              }}>
+                <Ionicons name={pStatus === 'lesionado' ? 'bandage-outline' : 'ban-outline'} size={8} color="#fff" />
+              </View>
+            )}
+          </View>
           <Text style={styles.benchName} numberOfLines={1}>{player.name.split(' ').slice(-1)[0]}</Text>
-          <Text style={styles.benchPos}>{posEs(player.position)}</Text>
+          <Text style={styles.benchPos}>{player.jersey ? `#${player.jersey} · ` : ''}{posEs(player.position)}</Text>
         </>
       ) : (
         <>
@@ -441,6 +458,7 @@ export default function SquadBuilderScreen({ navigation }) {
   const [selectedSlot, setSelectedSlot]       = useState(null);
   const [teamLineups, setTeamLineups]         = useState([]);
   const [rosterPlayers, setRosterPlayers]     = useState([]);
+  const [rosterStatusMap, setRosterStatusMap] = useState({}); // { playerName: playerStatus }
   const [rosterPickerSlot, setRosterPickerSlot] = useState(null); // { slotId, slotLabel, slotPosition, type }
 
   const { width: screenWidth } = useWindowDimensions();
@@ -460,10 +478,19 @@ export default function SquadBuilderScreen({ navigation }) {
     if (loadedTeamId) {
       setTeamLineups(getLineupsByTeam(loadedTeamId));
       const raw = getRoster(loadedTeamId);
+      const statusMap = {};
+      raw.forEach(r => {
+        try {
+          const p = JSON.parse(r.playerData);
+          if (p.name) statusMap[p.name] = r.playerStatus || '';
+        } catch {}
+      });
+      setRosterStatusMap(statusMap);
       setRosterPlayers(raw.map(r => { try { return JSON.parse(r.playerData); } catch { return null; } }).filter(Boolean));
     } else {
       setTeamLineups([]);
       setRosterPlayers([]);
+      setRosterStatusMap({});
     }
   }, [loadedTeamId, loadedLineupId]);
 
@@ -678,6 +705,17 @@ export default function SquadBuilderScreen({ navigation }) {
         result.ok ? `${result.count.toLocaleString()} jugadores disponibles.` : result.error,
       );
     }
+  };
+
+  const handleShareLineup = () => {
+    const filled = currentSlots.filter(sl => squad[sl.id]);
+    if (filled.length === 0) { Alert.alert('Pizarra vacía', 'Añade jugadores antes de compartir.'); return; }
+    const lines = filled.map(sl => {
+      const p = squad[sl.id];
+      return `${sl.label}: ${p.name} (${p.overall})`;
+    }).join('\n');
+    const header = [loadedTeamName, loadedLineupName].filter(Boolean).join(' — ');
+    Share.share({ message: `${header ? header + '\n' : ''}${formation}\n\n${lines}`, title: loadedLineupName || 'Alineación' });
   };
 
   const handleUpdateSquads      = () => runUpdate(false);
@@ -905,6 +943,26 @@ export default function SquadBuilderScreen({ navigation }) {
                   </View>
                 )}
 
+                {/* Badge lesionado / suspendido */}
+                {player && ['lesionado','suspendido'].includes(rosterStatusMap[player.name]) && (
+                  <View
+                    pointerEvents="none"
+                    style={{
+                      position: 'absolute',
+                      left: left + SLOT_SIZE - 10, top: top - 8,
+                      width: 18, height: 18, borderRadius: 9,
+                      backgroundColor: rosterStatusMap[player.name] === 'lesionado' ? '#ef4444' : '#f59e0b',
+                      justifyContent: 'center', alignItems: 'center',
+                      borderWidth: 1.5, borderColor: '#0f172a', zIndex: 12,
+                    }}
+                  >
+                    <Ionicons
+                      name={rosterStatusMap[player.name] === 'lesionado' ? 'bandage-outline' : 'ban-outline'}
+                      size={10} color="#fff"
+                    />
+                  </View>
+                )}
+
                 {/* Nombre + posición fuera del slot para que no quede clippeado */}
                 {player && (
                   <View
@@ -966,6 +1024,7 @@ export default function SquadBuilderScreen({ navigation }) {
                   onPress={() => handleBenchPress(slot.id, slot.label, 'bench')}
                   onLongPress={() => handleBenchLongPress(slot.id, slot.label, 'bench')}
                   style={styles.benchCardFlex}
+                  statusMap={rosterStatusMap}
                 />
               ))}
               {row.length < 4 && Array.from({ length: 4 - row.length }).map((_, i) => (
@@ -990,6 +1049,7 @@ export default function SquadBuilderScreen({ navigation }) {
                   onPress={() => handleBenchPress(slot.id, slot.label, 'reserves')}
                   onLongPress={() => handleBenchLongPress(slot.id, slot.label, 'reserves')}
                   style={styles.benchCardFlex}
+                  statusMap={rosterStatusMap}
                 />
               ))}
               {row.length < 4 && Array.from({ length: 4 - row.length }).map((_, i) => (
@@ -1037,6 +1097,9 @@ export default function SquadBuilderScreen({ navigation }) {
             <TouchableOpacity style={styles.teamsButton} onPress={() => navigation.push('Teams')}>
               <Ionicons name="shield-outline" size={16} color="#60a5fa" />
               <Text style={styles.teamsButtonText}>Mis Equipos</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.newBtn} onPress={handleShareLineup}>
+              <Ionicons name="share-outline" size={16} color="#94a3b8" />
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.newBtn}

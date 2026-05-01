@@ -15,12 +15,14 @@ import {
   deleteLineup,
   deleteTeam,
   getLineupsByTeam,
+  getRoster,
   getTeams,
 } from '../db/database';
 import { useSquadStore } from '../store/squadStore';
 
 const TEAM_COLORS = ['#3b82f6', '#8b5cf6', '#ef4444', '#f59e0b', '#14b8a6', '#ec4899'];
-const teamColor = (id) => TEAM_COLORS[id % TEAM_COLORS.length];
+const teamColor  = (id) => TEAM_COLORS[id % TEAM_COLORS.length];
+const ovrColor   = (ovr) => ovr >= 85 ? '#d97706' : ovr >= 75 ? '#16a34a' : '#4b5563';
 
 // ─── Lineup card ────────────────────────────────────────────────
 function LineupCard({ lineup, onLoad, onDelete }) {
@@ -55,7 +57,7 @@ function LineupCard({ lineup, onLoad, onDelete }) {
 }
 
 // ─── Team card ───────────────────────────────────────────────────
-function TeamCard({ team, lineups, expanded, onToggle, onLoad, onDeleteTeam, onDeleteLineup, onAutoLineup }) {
+function TeamCard({ team, lineups, expanded, onToggle, onLoad, onDeleteTeam, onDeleteLineup, onAutoLineup, rosterStats }) {
   const color = teamColor(team.id);
 
   const confirmDeleteTeam = () => {
@@ -96,6 +98,23 @@ function TeamCard({ team, lineups, expanded, onToggle, onLoad, onDeleteTeam, onD
 
       {expanded && (
         <View style={styles.lineupList}>
+          {/* Stats de plantilla */}
+          {rosterStats && rosterStats.total > 0 && (
+            <View style={styles.squadStatsRow}>
+              {[
+                { label: 'Jugadores', value: rosterStats.total,  color: '#60a5fa' },
+                { label: 'OVR medio', value: rosterStats.avgOvr || '—', color: ovrColor(rosterStats.avgOvr) },
+                rosterStats.injured   > 0 ? { label: 'Lesionados',  value: rosterStats.injured,   color: '#ef4444' } : null,
+                rosterStats.suspended > 0 ? { label: 'Suspendidos', value: rosterStats.suspended,  color: '#f59e0b' } : null,
+              ].filter(Boolean).map(({ label, value, color }) => (
+                <View key={label} style={styles.squadStatBox}>
+                  <Text style={[styles.squadStatValue, { color }]}>{value}</Text>
+                  <Text style={styles.squadStatLabel}>{label}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
           {lineups.length === 0 ? (
             <Text style={styles.noLineups}>Sin alineaciones — guarda una desde la Pizarra</Text>
           ) : (
@@ -121,6 +140,7 @@ export default function TeamsScreen({ navigation }) {
   const [expandedId, setExpandedId] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [newName, setNewName] = useState('');
+  const [rosterStatsByTeam, setRosterStatsByTeam] = useState({});
   const loadLineup = useSquadStore((s) => s.loadLineup);
 
   const refresh = () => {
@@ -166,6 +186,22 @@ export default function TeamsScreen({ navigation }) {
     refresh();
   };
 
+  const handleToggle = (teamId) => {
+    const isOpening = expandedId !== teamId;
+    setExpandedId(isOpening ? teamId : null);
+    if (isOpening && !rosterStatsByTeam[teamId]) {
+      try {
+        const raw = getRoster(teamId);
+        const players = raw.map(r => { try { return JSON.parse(r.playerData); } catch { return null; } }).filter(p => p?.overall);
+        const total  = players.length;
+        const avgOvr = total ? Math.round(players.reduce((s, p) => s + p.overall, 0) / total) : 0;
+        const injured   = raw.filter(r => r.playerStatus === 'lesionado').length;
+        const suspended = raw.filter(r => r.playerStatus === 'suspendido').length;
+        setRosterStatsByTeam(prev => ({ ...prev, [teamId]: { total, avgOvr, injured, suspended } }));
+      } catch {}
+    }
+  };
+
   const handleLoad = (lineup, team) => {
     loadLineup({
       teamId: team.id,
@@ -200,11 +236,12 @@ export default function TeamsScreen({ navigation }) {
             team={item}
             lineups={lineupsByTeam[item.id] || []}
             expanded={expandedId === item.id}
-            onToggle={() => setExpandedId(expandedId === item.id ? null : item.id)}
+            onToggle={() => handleToggle(item.id)}
             onLoad={handleLoad}
             onDeleteTeam={handleDeleteTeam}
             onDeleteLineup={handleDeleteLineup}
             onAutoLineup={() => navigation.navigate('AutoLineup', { teamId: item.id, teamName: item.name })}
+            rosterStats={rosterStatsByTeam[item.id]}
           />
         )}
       />
@@ -277,6 +314,11 @@ const styles = StyleSheet.create({
 
   plantillaBtn:     { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 9, paddingVertical: 5, borderRadius: 8, backgroundColor: '#2e1065', borderWidth: 1, borderColor: '#6d28d9', marginRight: 6 },
   plantillaBtnText: { color: '#a78bfa', fontSize: 11, fontWeight: '700' },
+
+  squadStatsRow:  { flexDirection: 'row', backgroundColor: '#0f172a', borderRadius: 10, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: '#1e293b', justifyContent: 'space-around' },
+  squadStatBox:   { alignItems: 'center', gap: 2 },
+  squadStatValue: { fontSize: 20, fontWeight: '900' },
+  squadStatLabel: { color: '#475569', fontSize: 10, fontWeight: '600', textTransform: 'uppercase' },
 
   emptyState: { alignItems: 'center', marginTop: 80, paddingHorizontal: 40 },
   emptyTitle: { color: '#64748b', fontSize: 18, fontWeight: '700', marginTop: 16, marginBottom: 8 },

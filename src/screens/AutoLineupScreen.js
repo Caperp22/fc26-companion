@@ -6,6 +6,7 @@ import {
   FlatList,
   Modal,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -153,6 +154,7 @@ function RosterItem({ item, onRemove, onEdit, onStatusChange, assignment }) {
           {posLabel}
           {player.age ? `  ·  ${player.age}a` : ''}
           {player.club ? `  ·  ${player.club}` : ''}
+          {player.jersey ? `  ·  #${player.jersey}` : ''}
         </Text>
       </View>
       {assignment && (
@@ -178,6 +180,14 @@ function RosterItem({ item, onRemove, onEdit, onStatusChange, assignment }) {
 function SuggestionCard({ title, formation, assignment, score, onLoad }) {
   const slots = FORMATIONS[formation]?.slots || [];
   const filled = slots.filter(sl => assignment[sl.id]);
+
+  const handleShare = () => {
+    const lines = filled.map(sl => {
+      const p = assignment[sl.id];
+      return `${sl.label}: ${p.name} (${p.overall})`;
+    }).join('\n');
+    Share.share({ message: `${title} — ${formation}\n\n${lines}`, title });
+  };
 
   const naturalCount = filled.filter(sl => {
     const p = assignment[sl.id];
@@ -238,10 +248,15 @@ function SuggestionCard({ title, formation, assignment, score, onLoad }) {
       )}
 
       {filled.length > 0 && (
-        <TouchableOpacity style={s.loadBtn} onPress={onLoad}>
-          <Ionicons name="play" size={14} color="#fff" />
-          <Text style={s.loadBtnText}>Cargar en Pizarra</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+          <TouchableOpacity style={[s.loadBtn, { flex: 1, marginTop: 0 }]} onPress={onLoad}>
+            <Ionicons name="play" size={14} color="#fff" />
+            <Text style={s.loadBtnText}>Cargar en Pizarra</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={s.shareBtn} onPress={handleShare}>
+            <Ionicons name="share-outline" size={18} color="#60a5fa" />
+          </TouchableOpacity>
+        </View>
       )}
     </View>
   );
@@ -254,6 +269,7 @@ function PlayerFormModal({ visible, initial, onClose, onSave }) {
   const [overall, setOverall] = useState('75');
   const [age, setAge]         = useState('25');
   const [club, setClub]       = useState('');
+  const [jersey, setJersey]   = useState('');
 
   useEffect(() => {
     if (!visible) return;
@@ -263,8 +279,9 @@ function PlayerFormModal({ visible, initial, onClose, onSave }) {
       setOverall(String(initial.overall || 75));
       setAge(String(initial.age || 25));
       setClub(initial.club || '');
+      setJersey(initial.jersey ? String(initial.jersey) : '');
     } else {
-      setName(''); setSelPos(['CM']); setOverall('75'); setAge('25'); setClub('');
+      setName(''); setSelPos(['CM']); setOverall('75'); setAge('25'); setClub(''); setJersey('');
     }
   }, [visible, initial]);
 
@@ -282,7 +299,7 @@ function PlayerFormModal({ visible, initial, onClose, onSave }) {
     const ovr = Math.min(99, Math.max(1, parseInt(overall) || 75));
     onSave({ name: name.trim(), positions: selPos, position: selPos[0], overall: ovr,
       potential: ovr, age: parseInt(age) || 25, club: club.trim(), marketValue: 0,
-      faceUrl: '', isCustom: true });
+      faceUrl: '', isCustom: true, jersey: parseInt(jersey) || 0 });
   };
 
   return (
@@ -311,9 +328,13 @@ function PlayerFormModal({ visible, initial, onClose, onSave }) {
                 <Text style={pf.label}>OVR</Text>
                 <TextInput style={pf.input} value={overall} onChangeText={setOverall} keyboardType="numeric" maxLength={2} />
               </View>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, marginRight: 8 }}>
                 <Text style={pf.label}>Edad</Text>
                 <TextInput style={pf.input} value={age} onChangeText={setAge} keyboardType="numeric" maxLength={2} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={pf.label}># Camiseta</Text>
+                <TextInput style={pf.input} value={jersey} onChangeText={setJersey} keyboardType="numeric" maxLength={2} placeholder="—" placeholderTextColor="#475569" />
               </View>
             </View>
 
@@ -511,6 +532,78 @@ const ss = StyleSheet.create({
   sub:   { color: '#475569', fontSize: 10 },
 });
 
+// ── Cobertura de posiciones ───────────────────────────────────
+const POS_GROUPS = [
+  { key: 'GK',  positions: ['GK'] },
+  { key: 'DEF', positions: ['CB','LB','RB','LWB','RWB'] },
+  { key: 'MED', positions: ['CDM','CM','CAM','LM','RM'] },
+  { key: 'ATK', positions: ['LW','RW','CF','ST'] },
+];
+const covColor = (n) => n === 0 ? '#ef4444' : n === 1 ? '#f59e0b' : '#22c55e';
+const covBg    = (n) => n === 0 ? '#2d0808'  : n === 1 ? '#2d1800'  : '#052e16';
+
+function PositionCoverageCard({ roster }) {
+  const coverage = useMemo(() => {
+    const map = {};
+    ALL_POS.forEach(p => { map[p] = 0; });
+    roster.forEach(r => {
+      const pd = parsePlayer(r.playerData);
+      (pd.positions || pd.position || '').split(',').map(x => x.trim()).filter(Boolean)
+        .forEach(pos => { if (map[pos] !== undefined) map[pos]++; });
+    });
+    return map;
+  }, [roster]);
+
+  if (roster.length === 0) return null;
+  return (
+    <View style={cov.card}>
+      <View style={cov.header}>
+        <Text style={cov.title}>Cobertura de posiciones</Text>
+        <View style={cov.legend}>
+          {[['#22c55e','2+'],['#f59e0b','1'],['#ef4444','0']].map(([color, label]) => (
+            <View key={label} style={cov.legendItem}>
+              <View style={[cov.dot, { backgroundColor: color }]} />
+              <Text style={cov.legendText}>{label}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+      {POS_GROUPS.map(({ key, positions }) => (
+        <View key={key} style={cov.row}>
+          <Text style={cov.groupLabel}>{key}</Text>
+          <View style={cov.cells}>
+            {positions.map(pos => {
+              const n = coverage[pos] ?? 0;
+              return (
+                <View key={pos} style={[cov.cell, { backgroundColor: covBg(n), borderColor: covColor(n) + '66' }]}>
+                  <Text style={[cov.posLabel, { color: covColor(n) }]}>{POS_ES[pos] || pos}</Text>
+                  <Text style={[cov.posCount, { color: covColor(n) }]}>{n}</Text>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+const cov = StyleSheet.create({
+  card:       { backgroundColor: '#1e293b', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#334155', gap: 8 },
+  header:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  title:      { color: '#94a3b8', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  legend:     { flexDirection: 'row', gap: 10 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  dot:        { width: 7, height: 7, borderRadius: 3.5 },
+  legendText: { color: '#64748b', fontSize: 10 },
+  row:        { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  groupLabel: { color: '#475569', fontSize: 10, fontWeight: '800', width: 30, textTransform: 'uppercase' },
+  cells:      { flexDirection: 'row', gap: 5, flexWrap: 'wrap', flex: 1 },
+  cell:       { borderRadius: 7, borderWidth: 1, paddingHorizontal: 7, paddingVertical: 3, alignItems: 'center', minWidth: 40 },
+  posLabel:   { fontSize: 9,  fontWeight: '800', textTransform: 'uppercase' },
+  posCount:   { fontSize: 15, fontWeight: '900', lineHeight: 19 },
+});
+
 // ── Pantalla principal ────────────────────────────────────────
 export default function AutoLineupScreen({ route, navigation }) {
   const { teamId, teamName = 'Plantilla' } = route.params || {};
@@ -522,6 +615,8 @@ export default function AutoLineupScreen({ route, navigation }) {
   const [showImport, setShowImport]   = useState(false);
   const [showCreate, setShowCreate]   = useState(false);
   const [editingItem, setEditingItem] = useState(null); // { rosterId, player }
+  const [filterPos, setFilterPos]     = useState('');
+  const [sortBy, setSortBy]           = useState('ovr');
 
   const loadLineup = useSquadStore(st => st.loadLineup);
 
@@ -552,6 +647,22 @@ export default function AutoLineupScreen({ route, navigation }) {
   useEffect(() => { load(); }, [load]);
 
   const existingNames = useMemo(() => new Set(roster.map(r => r.playerName)), [roster]);
+
+  const displayRoster = useMemo(() => {
+    let list = [...roster];
+    if (filterPos) {
+      list = list.filter(item => {
+        const p = parsePlayer(item.playerData);
+        return (p.positions || p.position || '').split(',').map(x => x.trim()).includes(filterPos);
+      });
+    }
+    return list.sort((a, b) => {
+      const pa = parsePlayer(a.playerData), pb = parsePlayer(b.playerData);
+      if (sortBy === 'ovr')  return (pb.overall || 0) - (pa.overall || 0);
+      if (sortBy === 'age')  return (pa.age || 99) - (pb.age || 99);
+      return a.playerName.localeCompare(b.playerName);
+    });
+  }, [roster, filterPos, sortBy]);
 
   const handleAdd = (player) => {
     const result = addToRoster(teamId, player);
@@ -623,7 +734,14 @@ export default function AutoLineupScreen({ route, navigation }) {
       Alert.alert('Plantilla vacía', 'Añade jugadores antes de generar sugerencias.');
       return;
     }
-    const players = roster.map(r => parsePlayer(r.playerData)).filter(p => p.overall);
+    const EXCLUDED = new Set(['lesionado', 'suspendido']);
+    const excluded = roster.filter(r => EXCLUDED.has(r.playerStatus || ''));
+    const available = roster.filter(r => !EXCLUDED.has(r.playerStatus || ''));
+    const players = available.map(r => parsePlayer(r.playerData)).filter(p => p.overall);
+    if (players.length === 0) {
+      Alert.alert('Sin jugadores disponibles', 'Todos los jugadores están lesionados o suspendidos.');
+      return;
+    }
     // Evaluar todas las formaciones con score ponderado:
     // rankScore = OVR_promedio * (0.7 + 0.3 * ratio_encaje_natural)
     // Así se prefiere una formación con más jugadores en posición natural
@@ -640,7 +758,12 @@ export default function AutoLineupScreen({ route, navigation }) {
     if (bestForm !== formation) setFormation(bestForm);
     const first  = autoAssign(bestForm, players);
     const second = autoAssign(bestForm, first.remaining);
-    setSuggestions({ first, second, bestForm, topForms: formScores.slice(0, 5) });
+    setSuggestions({
+      first, second, bestForm,
+      topForms:      formScores.slice(0, 5),
+      excludedCount: excluded.length,
+      excludedNames: excluded.map(r => r.playerName),
+    });
   };
 
   const handleSaveBoth = () => {
@@ -765,13 +888,44 @@ export default function AutoLineupScreen({ route, navigation }) {
           </View>
         </View>
 
+        {/* Filtro por posición */}
+        {roster.length > 0 && (
+          <>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingVertical: 2 }}>
+              {[{ key: '', label: 'Todos' }, ...ALL_POS.map(pos => ({ key: pos, label: POS_ES[pos] || pos }))].map(({ key, label }) => (
+                <TouchableOpacity
+                  key={key || 'all'}
+                  style={[s.filterChip, filterPos === key && s.filterChipActive]}
+                  onPress={() => setFilterPos(key)}
+                >
+                  <Text style={[s.filterChipText, filterPos === key && s.filterChipTextActive]}>{label}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <View style={s.sortRow}>
+              <Text style={s.sortLabel}>Ordenar:</Text>
+              {[['ovr','OVR'],['age','Edad'],['name','Nombre']].map(([key, label]) => (
+                <TouchableOpacity
+                  key={key}
+                  style={[s.sortBtn, sortBy === key && s.sortBtnActive]}
+                  onPress={() => setSortBy(key)}
+                >
+                  <Text style={[s.sortBtnText, sortBy === key && s.sortBtnTextActive]}>{label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        )}
+
         {roster.length === 0 ? (
           <View style={s.empty}>
             <Ionicons name="people-outline" size={40} color="#334155" />
             <Text style={s.emptyText}>Sin jugadores. Toca "Añadir" para empezar.</Text>
           </View>
+        ) : displayRoster.length === 0 ? (
+          <Text style={s.emptyText}>Sin jugadores en esa posición.</Text>
         ) : (
-          roster.map(item => {
+          displayRoster.map(item => {
             const p = parsePlayer(item.playerData);
             return (
               <RosterItem
@@ -788,6 +942,7 @@ export default function AutoLineupScreen({ route, navigation }) {
       </View>
 
       <SquadStatsCard roster={roster} />
+      <PositionCoverageCard roster={roster} />
 
       {/* Botón sugerir */}
       <TouchableOpacity
@@ -819,6 +974,16 @@ export default function AutoLineupScreen({ route, navigation }) {
                   <Text style={s.topFormChipFits}>{naturalFits}/11 ✓</Text>
                 </View>
               ))}
+            </View>
+          )}
+
+          {/* Banner excluidos */}
+          {suggestions.excludedCount > 0 && (
+            <View style={s.excludedBanner}>
+              <Ionicons name="bandage-outline" size={14} color="#ef4444" />
+              <Text style={s.excludedText} numberOfLines={2}>
+                {suggestions.excludedCount} excluido{suggestions.excludedCount > 1 ? 's' : ''} (lesión/suspensión): {suggestions.excludedNames.join(', ')}
+              </Text>
             </View>
           )}
 
@@ -985,6 +1150,21 @@ const s = StyleSheet.create({
 
   playerStatusBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 5, paddingVertical: 2, borderRadius: 6, borderWidth: 1 },
   playerStatusText:  { fontSize: 9, fontWeight: '700' },
+
+  filterChip:          { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 16, backgroundColor: '#0f172a', borderWidth: 1, borderColor: '#334155' },
+  filterChipActive:    { borderColor: '#3b82f6', backgroundColor: '#0d1f3c' },
+  filterChipText:      { color: '#475569', fontSize: 11, fontWeight: '600' },
+  filterChipTextActive:{ color: '#3b82f6' },
+  sortRow:             { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  sortLabel:           { color: '#475569', fontSize: 11 },
+  sortBtn:             { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, backgroundColor: '#0f172a', borderWidth: 1, borderColor: '#334155' },
+  sortBtnActive:       { borderColor: '#3b82f6', backgroundColor: '#0d1f3c' },
+  sortBtnText:         { color: '#475569', fontSize: 11, fontWeight: '600' },
+  sortBtnTextActive:   { color: '#3b82f6' },
+
+  shareBtn:        { width: 44, height: 44, borderRadius: 10, backgroundColor: '#1e3a5f', borderWidth: 1, borderColor: '#1d4ed8', justifyContent: 'center', alignItems: 'center' },
+  excludedBanner:  { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#2d0808', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#ef444444' },
+  excludedText:    { color: '#fca5a5', fontSize: 11, flex: 1 },
 
   bestFormRow:     { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#1e293b', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#f59e0b33' },
   bestFormLabel:   { color: '#94a3b8', fontSize: 12, fontWeight: '600', flex: 1 },
