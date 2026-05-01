@@ -134,7 +134,7 @@ function TeamCard({ team, lineups, expanded, onToggle, onLoad, onDeleteTeam, onD
 }
 
 // ─── Main Screen ─────────────────────────────────────────────────
-export default function TeamsScreen({ navigation }) {
+export default function TeamsScreen({ navigation, autoLineupRoute = 'AutoLineup' }) {
   const [teams, setTeams] = useState([]);
   const [lineupsByTeam, setLineupsByTeam] = useState({});
   const [expandedId, setExpandedId] = useState(null);
@@ -240,7 +240,7 @@ export default function TeamsScreen({ navigation }) {
             onLoad={handleLoad}
             onDeleteTeam={handleDeleteTeam}
             onDeleteLineup={handleDeleteLineup}
-            onAutoLineup={() => navigation.navigate('AutoLineup', { teamId: item.id, teamName: item.name })}
+            onAutoLineup={() => navigation.navigate(autoLineupRoute, { teamId: item.id, teamName: item.name })}
             rosterStats={rosterStatsByTeam[item.id]}
           />
         )}

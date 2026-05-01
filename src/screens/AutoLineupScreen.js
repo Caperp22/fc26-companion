@@ -167,7 +167,7 @@ function RosterItem({ item, onRemove, onEdit, onStatusChange, assignment }) {
         <Ionicons name={statusCfg.icon} size={16} color={pStatus ? statusCfg.color : '#334155'} />
       </TouchableOpacity>
       <TouchableOpacity onPress={onEdit} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }} style={{ marginLeft: 6 }}>
-        <Ionicons name="pencil-outline" size={17} color={player.isCustom ? '#3b82f6' : '#475569'} />
+        <Ionicons name="pencil-outline" size={17} color="#3b82f6" />
       </TouchableOpacity>
       <TouchableOpacity onPress={onRemove} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ marginLeft: 6 }}>
         <Ionicons name="trash-outline" size={18} color="#475569" />
