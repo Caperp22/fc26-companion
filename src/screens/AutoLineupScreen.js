@@ -21,7 +21,7 @@ import {
   getLineupsByTeam,
   getRoster,
   removeFromRoster,
-  saveLineup,
+  saveLineupByName,
   searchPlayersWithFilters,
   updateCustomPlayer,
   updateRosterPlayer,
@@ -105,8 +105,10 @@ function PlayerFace({ player, size = 48 }) {
   );
 }
 
+const STATUS_COLOR = { TIT: '#1d4ed8', SUP: '#6d28d9', RES: '#374151' };
+
 // ── Fila de jugador en plantilla ──────────────────────────────
-function RosterItem({ item, onRemove, onEdit }) {
+function RosterItem({ item, onRemove, onEdit, assignment }) {
   const player = useMemo(() => parsePlayer(item.playerData), [item.playerData]);
   const posLabel = (player.positions || player.position || '').split(',').map(p => POS_ES[p.trim()] || p.trim()).join(' / ');
   return (
@@ -114,12 +116,22 @@ function RosterItem({ item, onRemove, onEdit }) {
       <PlayerFace player={player} size={46} />
       <View style={{ flex: 1 }}>
         <Text style={s.rosterName} numberOfLines={1}>{item.playerName}</Text>
-        <Text style={s.rosterMeta}>{posLabel}  ·  {player.club || '—'}</Text>
+        <Text style={s.rosterMeta}>
+          {posLabel}
+          {player.age ? `  ·  ${player.age}a` : ''}
+          {player.club ? `  ·  ${player.club}` : ''}
+        </Text>
       </View>
-      <TouchableOpacity onPress={onEdit} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ marginRight: 10 }}>
+      {assignment && (
+        <View style={[s.statusBadge, { backgroundColor: STATUS_COLOR[assignment.type] ?? '#374151' }]}>
+          <Text style={s.statusText}>{assignment.type}</Text>
+          {assignment.lineup ? <Text style={s.statusLineup} numberOfLines={1}>{assignment.lineup}</Text> : null}
+        </View>
+      )}
+      <TouchableOpacity onPress={onEdit} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ marginLeft: 8 }}>
         <Ionicons name="pencil-outline" size={17} color={player.isCustom ? '#3b82f6' : '#475569'} />
       </TouchableOpacity>
-      <TouchableOpacity onPress={onRemove} hitSlop={{ top: 8, bottom: 8, left: 10, right: 10 }}>
+      <TouchableOpacity onPress={onRemove} hitSlop={{ top: 8, bottom: 8, left: 10, right: 10 }} style={{ marginLeft: 6 }}>
         <Ionicons name="trash-outline" size={18} color="#475569" />
       </TouchableOpacity>
     </View>
@@ -460,6 +472,7 @@ const ss = StyleSheet.create({
 export default function AutoLineupScreen({ route, navigation }) {
   const { teamId, teamName = 'Plantilla' } = route.params || {};
   const [roster, setRoster]           = useState([]);
+  const [teamLineups, setTeamLineups] = useState([]);
   const [formation, setFormation]     = useState('4-3-3');
   const [suggestions, setSuggestions] = useState(null);
   const [showAdd, setShowAdd]         = useState(false);
@@ -471,8 +484,27 @@ export default function AutoLineupScreen({ route, navigation }) {
 
   const load = useCallback(() => {
     setRoster(getRoster(teamId));
+    setTeamLineups(getLineupsByTeam(teamId) || []);
     setSuggestions(null);
   }, [teamId]);
+
+  // Mapa jugador → { type, lineup } basado en las alineaciones guardadas
+  const playerAssignments = useMemo(() => {
+    const result = {};
+    const parse = (s) => { try { return JSON.parse(s || '{}'); } catch { return {}; } };
+    teamLineups.forEach(lineup => {
+      Object.values(parse(lineup.squad)).forEach(p => {
+        if (p?.name && !result[p.name]) result[p.name] = { type: 'TIT', lineup: lineup.name };
+      });
+      Object.values(parse(lineup.bench)).forEach(p => {
+        if (p?.name && !result[p.name]) result[p.name] = { type: 'SUP', lineup: lineup.name };
+      });
+      Object.values(parse(lineup.reserves)).forEach(p => {
+        if (p?.name && !result[p.name]) result[p.name] = { type: 'RES', lineup: lineup.name };
+      });
+    });
+    return result;
+  }, [teamLineups]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -539,17 +571,17 @@ export default function AutoLineupScreen({ route, navigation }) {
       return;
     }
     const players = roster.map(r => parsePlayer(r.playerData)).filter(p => p.overall);
-    // Encontrar la mejor formación para esta plantilla
-    let bestForm = formation;
-    let bestScore = -1;
-    FORMATION_KEYS.forEach(f => {
+    // Evaluar todas las formaciones y ordenar por puntuación
+    const formScores = FORMATION_KEYS.map(f => {
       const { score } = autoAssign(f, players);
-      if (score > bestScore) { bestScore = score; bestForm = f; }
-    });
+      return { f, score };
+    }).sort((a, b) => b.score - a.score);
+
+    const bestForm = formScores[0].f;
     if (bestForm !== formation) setFormation(bestForm);
     const first  = autoAssign(bestForm, players);
     const second = autoAssign(bestForm, first.remaining);
-    setSuggestions({ first, second, bestForm });
+    setSuggestions({ first, second, bestForm, topForms: formScores.slice(0, 5) });
   };
 
   const handleSaveBoth = () => {
@@ -594,8 +626,10 @@ export default function AutoLineupScreen({ route, navigation }) {
     }
   };
 
-  const handleLoad = (assignment, withBench = false) => {
+  const handleLoad = (assignment, lineupName, withBench = false) => {
     let bench = {}, reserves = {};
+    const f = suggestions?.bestForm || formation;
+
     if (withBench && suggestions) {
       const secondPlayers = Object.values(suggestions.second.assignment).filter(Boolean);
       BENCH_IDS.forEach((id, i) => { if (secondPlayers[i]) bench[id] = secondPlayers[i]; });
@@ -608,11 +642,17 @@ export default function AutoLineupScreen({ route, navigation }) {
         .sort((a, b) => b.overall - a.overall);
       RESERVE_IDS.forEach((id, i) => { if (rest[i]) reserves[id] = rest[i]; });
     }
+
+    // Guardar en DB para que aparezcan los tabs en la pizarra
+    const saveResult = teamId
+      ? saveLineupByName({ teamId, name: lineupName, formation: f, squad: assignment, bench, reserves })
+      : { ok: false };
+
     loadLineup({
       teamId, teamName,
-      lineupId:   null,
-      lineupName: 'Sugerencia automática',
-      formation:  suggestions?.bestForm || formation,
+      lineupId:   saveResult.ok ? saveResult.id : null,
+      lineupName,
+      formation:  f,
       squad:      assignment,
       bench,
       reserves,
@@ -678,6 +718,7 @@ export default function AutoLineupScreen({ route, navigation }) {
               <RosterItem
                 key={item.id}
                 item={item}
+                assignment={playerAssignments[item.playerName]}
                 onRemove={() => handleRemove(item)}
                 onEdit={() => setEditingItem({ rosterId: item.id, player: p })}
               />
@@ -701,7 +742,26 @@ export default function AutoLineupScreen({ route, navigation }) {
       {/* Resultados */}
       {suggestions && (
         <>
-          {/* #9 Comparativa rápida titular vs segunda */}
+          {/* Formación óptima detectada */}
+          <View style={s.bestFormRow}>
+            <Ionicons name="sparkles" size={14} color="#fbbf24" />
+            <Text style={s.bestFormLabel}>Formación óptima detectada:</Text>
+            <View style={s.bestFormBadge}>
+              <Text style={s.bestFormBadgeText}>{suggestions.bestForm}</Text>
+            </View>
+          </View>
+          {suggestions.topForms?.length > 1 && (
+            <View style={s.topFormsRow}>
+              {suggestions.topForms.map(({ f, score }, i) => (
+                <View key={f} style={[s.topFormChip, i === 0 && s.topFormChipBest]}>
+                  <Text style={[s.topFormChipText, i === 0 && s.topFormChipTextBest]}>{f}</Text>
+                  <Text style={[s.topFormChipScore, i === 0 && { color: '#fbbf24' }]}>{score}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* Comparativa rápida titular vs segunda */}
           <View style={s.compareRow}>
             <View style={s.compareBox}>
               <Text style={s.compareLabel}>Titular</Text>
@@ -721,14 +781,14 @@ export default function AutoLineupScreen({ route, navigation }) {
             formation={suggestions.bestForm || formation}
             assignment={suggestions.first.assignment}
             score={suggestions.first.score}
-            onLoad={() => handleLoad(suggestions.first.assignment, true)}
+            onLoad={() => handleLoad(suggestions.first.assignment, 'Titular', true)}
           />
           <SuggestionCard
             title="Segunda alineación"
             formation={suggestions.bestForm || formation}
             assignment={suggestions.second.assignment}
             score={suggestions.second.score}
-            onLoad={() => handleLoad(suggestions.second.assignment, false)}
+            onLoad={() => handleLoad(suggestions.second.assignment, 'Alternativa', false)}
           />
 
           <TouchableOpacity style={s.saveAllBtn} onPress={handleSaveBoth}>
@@ -854,6 +914,22 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: '#16a34a',
   },
   saveAllBtnText: { color: '#86efac', fontSize: 15, fontWeight: '800' },
+
+  statusBadge:   { alignItems: 'center', marginRight: 6, minWidth: 36 },
+  statusText:    { color: '#fff', fontSize: 10, fontWeight: '900' },
+  statusLineup:  { color: '#94a3b8', fontSize: 9, maxWidth: 48 },
+
+  bestFormRow:     { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#1e293b', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#f59e0b33' },
+  bestFormLabel:   { color: '#94a3b8', fontSize: 12, fontWeight: '600', flex: 1 },
+  bestFormBadge:   { backgroundColor: '#92400e', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
+  bestFormBadgeText: { color: '#fbbf24', fontSize: 12, fontWeight: '800' },
+
+  topFormsRow:          { flexDirection: 'row', gap: 6 },
+  topFormChip:          { flex: 1, backgroundColor: '#1e293b', borderRadius: 8, padding: 8, alignItems: 'center', borderWidth: 1, borderColor: '#334155' },
+  topFormChipBest:      { borderColor: '#f59e0b', backgroundColor: '#1c1709' },
+  topFormChipText:      { color: '#475569', fontSize: 10, fontWeight: '700' },
+  topFormChipTextBest:  { color: '#fbbf24' },
+  topFormChipScore:     { color: '#475569', fontSize: 13, fontWeight: '900' },
 
   compareRow:  { flexDirection: 'row', backgroundColor: '#1e293b', borderRadius: 14, borderWidth: 1, borderColor: '#334155', overflow: 'hidden' },
   compareBox:  { flex: 1, alignItems: 'center', paddingVertical: 14, gap: 2 },

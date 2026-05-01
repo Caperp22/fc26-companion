@@ -438,6 +438,16 @@ export const saveLineup = ({ teamId, lineupId, name, formation, squad, bench, re
   } catch (e) { return { ok: false, error: e.message }; }
 };
 
+// Upsert: actualiza si ya existe una alineación con ese nombre para el equipo, crea si no.
+export const saveLineupByName = ({ teamId, name, formation, squad, bench, reserves }) => {
+  try {
+    const existing = db.getFirstSync(
+      'SELECT id FROM lineups WHERE teamId = ? AND name = ?', [teamId, name]
+    );
+    return saveLineup({ teamId, lineupId: existing?.id || null, name, formation, squad, bench, reserves });
+  } catch (e) { return { ok: false, error: e.message }; }
+};
+
 export const deleteLineup = (id) => {
   try {
     db.runSync('DELETE FROM lineups WHERE id = ?', [id]);
