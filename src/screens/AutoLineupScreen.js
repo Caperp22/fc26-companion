@@ -93,7 +93,7 @@ const parsePlayer = (data) => { try { return JSON.parse(data); } catch { return 
 const BENCH_IDS   = ['B0','B1','B2','B3','B4','B5','B6'];
 const RESERVE_IDS = ['R0','R1','R2','R3','R4'];
 const ALL_POS = ['GK','CB','LB','RB','LWB','RWB','CDM','CM','CAM','LM','RM','LW','RW','CF','ST'];
-const POS_ES  = { GK:'PO',CB:'DFC',LB:'LI',RB:'LD',LWB:'CAI',RWB:'CAD',CDM:'MCD',CM:'MC',CAM:'MCO',LM:'MI',RM:'MD',LW:'EI',RW:'ED',CF:'SD',ST:'DC' };
+const POS_ES  = { GK:'PO',CB:'DFC',LB:'DFI',RB:'DFD',LWB:'CAI',RWB:'CAD',CDM:'MCD',CM:'MC',CAM:'MCO',LM:'MI',RM:'MD',LW:'EI',RW:'ED',CF:'SD',ST:'DC' };
 
 // ── Foto con badge OVR ────────────────────────────────────────
 function PlayerFace({ player, size = 48 }) {
@@ -264,12 +264,13 @@ function SuggestionCard({ title, formation, assignment, score, onLoad }) {
 
 // ── Modal crear / editar jugador manual ──────────────────────
 function PlayerFormModal({ visible, initial, onClose, onSave }) {
-  const [name, setName]       = useState('');
-  const [selPos, setSelPos]   = useState(['CM']);
-  const [overall, setOverall] = useState('75');
-  const [age, setAge]         = useState('25');
-  const [club, setClub]       = useState('');
-  const [jersey, setJersey]   = useState('');
+  const [name, setName]         = useState('');
+  const [selPos, setSelPos]     = useState(['CM']);
+  const [overall, setOverall]   = useState('75');
+  const [potential, setPotential] = useState('75');
+  const [age, setAge]           = useState('25');
+  const [club, setClub]         = useState('');
+  const [jersey, setJersey]     = useState('');
 
   useEffect(() => {
     if (!visible) return;
@@ -277,11 +278,12 @@ function PlayerFormModal({ visible, initial, onClose, onSave }) {
       setName(initial.name || '');
       setSelPos((initial.positions || initial.position || 'CM').split(',').map(p => p.trim()).filter(Boolean));
       setOverall(String(initial.overall || 75));
+      setPotential(String(initial.potential || initial.overall || 75));
       setAge(String(initial.age || 25));
       setClub(initial.club || '');
       setJersey(initial.jersey ? String(initial.jersey) : '');
     } else {
-      setName(''); setSelPos(['CM']); setOverall('75'); setAge('25'); setClub(''); setJersey('');
+      setName(''); setSelPos(['CM']); setOverall('75'); setPotential('75'); setAge('25'); setClub(''); setJersey('');
     }
   }, [visible, initial]);
 
@@ -297,8 +299,9 @@ function PlayerFormModal({ visible, initial, onClose, onSave }) {
   const handleSave = () => {
     if (!name.trim()) { Alert.alert('Error', 'Escribe el nombre del jugador.'); return; }
     const ovr = Math.min(99, Math.max(1, parseInt(overall) || 75));
+    const pot = Math.min(99, Math.max(ovr, parseInt(potential) || ovr));
     onSave({ name: name.trim(), positions: selPos, position: selPos[0], overall: ovr,
-      potential: ovr, age: parseInt(age) || 25, club: club.trim(), marketValue: 0,
+      potential: pot, age: parseInt(age) || 25, club: club.trim(), marketValue: 0,
       faceUrl: '', isCustom: true, jersey: parseInt(jersey) || 0 });
   };
 
@@ -315,19 +318,41 @@ function PlayerFormModal({ visible, initial, onClose, onSave }) {
             <TextInput style={pf.input} value={name} onChangeText={setName} placeholder="Nombre del jugador" placeholderTextColor="#475569" autoFocus={!initial} />
 
             <Text style={pf.label}>Posiciones</Text>
-            <View style={pf.posGrid}>
-              {ALL_POS.map(pos => (
-                <TouchableOpacity key={pos} style={[pf.posChip, selPos.includes(pos) && pf.posChipActive]} onPress={() => togglePos(pos)}>
-                  <Text style={[pf.posChipText, selPos.includes(pos) && pf.posChipTextActive]}>{POS_ES[pos] || pos}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            {[
+              { group: 'Portero',  color: '#f59e0b', positions: ['GK'] },
+              { group: 'Defensa',  color: '#3b82f6', positions: ['CB','LB','RB','LWB','RWB'] },
+              { group: 'Medio',    color: '#8b5cf6', positions: ['CDM','CM','CAM','LM','RM'] },
+              { group: 'Ataque',   color: '#ef4444', positions: ['LW','RW','CF','ST'] },
+            ].map(({ group, color, positions }) => (
+              <View key={group} style={{ marginBottom: 8 }}>
+                <Text style={[pf.groupLabel, { color }]}>{group}</Text>
+                <View style={pf.posGrid}>
+                  {positions.map(pos => (
+                    <TouchableOpacity
+                      key={pos}
+                      style={[pf.posChip, selPos.includes(pos) && { ...pf.posChipActive, borderColor: color }]}
+                      onPress={() => togglePos(pos)}
+                    >
+                      <Text style={[pf.posChipText, selPos.includes(pos) && { ...pf.posChipTextActive, color }]}>
+                        {POS_ES[pos] || pos}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            ))}
 
             <View style={pf.row}>
               <View style={{ flex: 1, marginRight: 8 }}>
                 <Text style={pf.label}>OVR</Text>
                 <TextInput style={pf.input} value={overall} onChangeText={setOverall} keyboardType="numeric" maxLength={2} />
               </View>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Text style={pf.label}>Potencial</Text>
+                <TextInput style={pf.input} value={potential} onChangeText={setPotential} keyboardType="numeric" maxLength={2} />
+              </View>
+            </View>
+            <View style={pf.row}>
               <View style={{ flex: 1, marginRight: 8 }}>
                 <Text style={pf.label}>Edad</Text>
                 <TextInput style={pf.input} value={age} onChangeText={setAge} keyboardType="numeric" maxLength={2} />
@@ -1246,6 +1271,7 @@ const pf = StyleSheet.create({
   label:   { color: '#94a3b8', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6, marginTop: 14 },
   input:   { backgroundColor: '#0f172a', borderRadius: 10, paddingHorizontal: 14, height: 44, color: '#f1f5f9', fontSize: 14, borderWidth: 1, borderColor: '#334155' },
   row:     { flexDirection: 'row' },
+  groupLabel: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
   posGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   posChip:        { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: '#0f172a', borderWidth: 1, borderColor: '#334155' },
   posChipActive:  { backgroundColor: '#1e3a5f', borderColor: '#3b82f6' },

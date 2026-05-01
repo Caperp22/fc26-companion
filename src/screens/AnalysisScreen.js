@@ -126,7 +126,7 @@ const goToDetail = (navigation, player) =>
 
 // ─── Sección 0: Radar de profundidad por posición ──────────────
 const ALL_POSITIONS = ['GK','LB','CB','RB','LWB','RWB','CDM','CM','CAM','LM','RM','LW','RW','CF','ST'];
-const POS_ES = { GK:'PO',LB:'LI',CB:'DFC',RB:'LD',LWB:'CAI',RWB:'CAD',CDM:'MCD',CM:'MC',CAM:'MCO',LM:'MI',RM:'MD',LW:'EI',RW:'ED',CF:'SD',ST:'DC' };
+const POS_ES = { GK:'PO',LB:'DFI',CB:'DFC',RB:'DFD',LWB:'CAI',RWB:'CAD',CDM:'MCD',CM:'MC',CAM:'MCO',LM:'MI',RM:'MD',LW:'EI',RW:'ED',CF:'SD',ST:'DC' };
 
 const POS_COLOR = (pos) => {
   if (pos === 'GK') return '#b45309';
