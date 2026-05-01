@@ -266,91 +266,6 @@ function RosterPickerModal({ visible, slotLabel, slotPosition, players, onSelect
   );
 }
 
-// ─── Modal de detalle de jugador ───────────────────────────────
-function PlayerDetailModal({ visible, player, onClose }) {
-  if (!player) return null;
-  const positions = (player.positions || player.position || '').split(',').map(p => p.trim()).filter(Boolean);
-  const attrs = [
-    { label: 'VEL', value: player.pace },
-    { label: 'TIR', value: player.shooting },
-    { label: 'PAS', value: player.passing },
-    { label: 'REG', value: player.dribbling },
-    { label: 'DEF', value: player.defending },
-    { label: 'FIS', value: player.physic },
-  ].filter(a => a.value > 0);
-
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <TouchableOpacity style={pd.overlay} activeOpacity={1} onPress={onClose}>
-        <TouchableOpacity style={pd.card} activeOpacity={1} onPress={() => {}}>
-          <View style={pd.header}>
-            <PlayerFace player={player} size={72} />
-            <View style={{ flex: 1, marginLeft: 14 }}>
-              <Text style={pd.name}>{player.name}</Text>
-              <View style={pd.posRow}>
-                {positions.map(pos => (
-                  <View key={pos} style={[pd.posBadge, { backgroundColor: getSlotBorderColor(pos) }]}>
-                    <Text style={pd.posBadgeText}>{posEs(pos)}</Text>
-                  </View>
-                ))}
-              </View>
-              <Text style={pd.meta}>
-                {player.age ? `${player.age} años` : ''}
-                {player.club ? `  ·  ${player.club}` : ''}
-                {player.nationality ? `  ·  ${player.nationality}` : ''}
-              </Text>
-            </View>
-          </View>
-
-          {attrs.length > 0 ? (
-            <View style={pd.attrsBox}>
-              {attrs.map(({ label, value }) => (
-                <View key={label} style={pd.attrRow}>
-                  <Text style={pd.attrLabel}>{label}</Text>
-                  <View style={pd.attrBar}>
-                    <View style={[pd.attrFill, { width: `${value}%`, backgroundColor: getOverallBg(value) }]} />
-                  </View>
-                  <Text style={[pd.attrVal, { color: getOverallBg(value) }]}>{value}</Text>
-                </View>
-              ))}
-            </View>
-          ) : (
-            <View style={pd.ovrOnly}>
-              <Text style={[pd.ovrBig, { color: getOverallBg(player.overall) }]}>{player.overall}</Text>
-              <Text style={pd.ovrLabel}>OVR</Text>
-            </View>
-          )}
-
-          <TouchableOpacity style={pd.closeBtn} onPress={onClose}>
-            <Text style={pd.closeBtnText}>Cerrar</Text>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </TouchableOpacity>
-    </Modal>
-  );
-}
-
-const pd = StyleSheet.create({
-  overlay:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'center', padding: 24 },
-  card:     { backgroundColor: '#1e293b', borderRadius: 20, padding: 20, borderWidth: 1, borderColor: '#334155' },
-  header:   { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  name:     { color: '#f1f5f9', fontSize: 18, fontWeight: '900', marginBottom: 6 },
-  posRow:   { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginBottom: 6 },
-  posBadge: { paddingHorizontal: 7, paddingVertical: 3, borderRadius: 5 },
-  posBadgeText: { color: '#fff', fontSize: 11, fontWeight: '800' },
-  meta:     { color: '#64748b', fontSize: 12 },
-  attrsBox: { gap: 8, marginBottom: 16 },
-  attrRow:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  attrLabel:{ color: '#64748b', fontSize: 12, fontWeight: '700', width: 30 },
-  attrBar:  { flex: 1, height: 7, backgroundColor: '#0f172a', borderRadius: 4, overflow: 'hidden' },
-  attrFill: { height: 7, borderRadius: 4 },
-  attrVal:  { fontSize: 13, fontWeight: '800', width: 26, textAlign: 'right' },
-  ovrOnly:  { alignItems: 'center', paddingVertical: 16 },
-  ovrBig:   { fontSize: 56, fontWeight: '900' },
-  ovrLabel: { color: '#64748b', fontSize: 13, fontWeight: '700' },
-  closeBtn: { backgroundColor: '#0f172a', borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
-  closeBtnText: { color: '#94a3b8', fontSize: 14, fontWeight: '700' },
-});
 
 // ─── Bench / Reserve card ───────────────────────────────────────
 function BenchCard({ label, player, pendingPlayer, isSelected, onPress, onLongPress, style }) {
@@ -527,7 +442,6 @@ export default function SquadBuilderScreen({ navigation }) {
   const [teamLineups, setTeamLineups]         = useState([]);
   const [rosterPlayers, setRosterPlayers]     = useState([]);
   const [rosterPickerSlot, setRosterPickerSlot] = useState(null); // { slotId, slotLabel, slotPosition, type }
-  const [detailPlayer, setDetailPlayer]       = useState(null);
 
   const { width: screenWidth } = useWindowDimensions();
 
@@ -538,9 +452,8 @@ export default function SquadBuilderScreen({ navigation }) {
   const PITCH_H    = Math.round(PITCH_W * 1.52);
   const CENTER_OFF = (screenWidth - PITCH_W) / 2;   // = SLOT_SIZE = 60
 
-  const currentSlots = FORMATIONS[formation]?.slots || [];
-  const filledCount  = Object.keys(squad).length;
-  const benchCount   = Object.keys(bench).length;
+  const currentSlots = useMemo(() => FORMATIONS[formation]?.slots || [], [formation]);
+  const filledCount = Object.keys(squad).length;
 
   // ── Cargar alineaciones y plantilla cuando cambia el equipo ───
   useEffect(() => {
@@ -654,7 +567,7 @@ export default function SquadBuilderScreen({ navigation }) {
     }
     Alert.alert(player.name, `GRL ${player.overall}  •  ${player.position}`, [
       { text: 'Cancelar', style: 'cancel' },
-      { text: 'Ver detalle', onPress: () => setDetailPlayer(player) },
+      { text: 'Ficha completa', onPress: () => navigation.push('PlayerDetail', { player }) },
       { text: 'Cambiar',  onPress: () => navigateToScouting(slot.id, slot.label, slot.position) },
       { text: 'Quitar',   style: 'destructive', onPress: () => removePlayer(slot.id) },
     ]);
@@ -699,7 +612,7 @@ export default function SquadBuilderScreen({ navigation }) {
     }
     Alert.alert(player.name, `GRL ${player.overall}  •  ${player.position}`, [
       { text: 'Cancelar', style: 'cancel' },
-      { text: 'Ver detalle', onPress: () => setDetailPlayer(player) },
+      { text: 'Ficha completa', onPress: () => navigation.push('PlayerDetail', { player }) },
       { text: 'Cambiar',  onPress: () => navigateToScouting(slotId, label, null) },
       { text: 'Quitar',   style: 'destructive', onPress: () => removeFn(slotId) },
     ]);
@@ -780,6 +693,27 @@ export default function SquadBuilderScreen({ navigation }) {
      : selectedSlot.type === 'bench'    ? bench[selectedSlot.id]
      : reserves[selectedSlot.id])
     : null;
+
+  // ── Estadísticas por línea (titulares) ─────────────────────────
+  const lineStats = useMemo(() => {
+    const DEF = ['GK','CB','LB','RB','LWB','RWB'];
+    const MID = ['CDM','CM','CAM','LM','RM'];
+    const ATT = ['LW','RW','CF','ST'];
+    const avg = (players) => players.length
+      ? Math.round(players.reduce((s, p) => s + p.overall, 0) / players.length)
+      : null;
+    const players = Object.entries(squad).map(([slotId, player]) => {
+      if (!player) return null;
+      const slot = currentSlots.find(s => s.id === slotId);
+      return slot ? { player, pos: slot.position } : null;
+    }).filter(Boolean);
+    return {
+      def: avg(players.filter(x => DEF.includes(x.pos)).map(x => x.player)),
+      mid: avg(players.filter(x => MID.includes(x.pos)).map(x => x.player)),
+      att: avg(players.filter(x => ATT.includes(x.pos)).map(x => x.player)),
+      total: avg(Object.values(squad).filter(Boolean)),
+    };
+  }, [squad, currentSlots]);
 
   return (
     <View style={styles.container}>
@@ -992,13 +926,30 @@ export default function SquadBuilderScreen({ navigation }) {
           })}
         </View>
 
-        {/* Contador */}
-        <View style={styles.countRow}>
-          <Text style={styles.countText}>{filledCount}/11 titulares</Text>
-          {benchCount > 0 && <Text style={styles.countSep}>·</Text>}
-          {benchCount > 0 && <Text style={styles.countText}>{benchCount} suplentes</Text>}
-          {!selectedSlot && <Text style={styles.hint}>Mantén pulsado para opciones · Toca para mover</Text>}
-        </View>
+        {/* Estadísticas por línea */}
+        {filledCount > 0 && (
+          <View style={styles.lineStatsRow}>
+            {[
+              { label: 'DEF', value: lineStats.def, color: '#3b82f6' },
+              { label: 'MID', value: lineStats.mid, color: '#8b5cf6' },
+              { label: 'ATK', value: lineStats.att, color: '#ef4444' },
+              { label: 'OVR', value: lineStats.total, color: getOverallBg(lineStats.total ?? 0) },
+            ].map(({ label, value, color }) => value !== null && (
+              <View key={label} style={styles.lineStatBox}>
+                <Text style={[styles.lineStatVal, { color }]}>{value}</Text>
+                <Text style={styles.lineStatLabel}>{label}</Text>
+              </View>
+            ))}
+            <Text style={styles.lineStatFilled}>{filledCount}/11</Text>
+          </View>
+        )}
+
+        {/* Contador / hints */}
+        {!selectedSlot && filledCount === 0 && (
+          <View style={styles.countRow}>
+            <Text style={styles.hint}>Mantén pulsado un slot para opciones · Toca para mover jugadores</Text>
+          </View>
+        )}
 
         {/* ── Suplentes ──────────────────────────────────────────── */}
         <View style={[styles.section, { width: PITCH_W, alignSelf: 'center' }]}>
@@ -1048,13 +999,6 @@ export default function SquadBuilderScreen({ navigation }) {
           ))}
         </View>
       </ScrollView>
-
-      {/* Modal de detalle */}
-      <PlayerDetailModal
-        visible={!!detailPlayer}
-        player={detailPlayer}
-        onClose={() => setDetailPlayer(null)}
-      />
 
       {/* Picker de plantilla */}
       <RosterPickerModal
@@ -1181,6 +1125,18 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.95)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
     width: SLOT_SIZE + 16,
   },
+
+  lineStatsRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 0, marginTop: 8, marginBottom: 4,
+    backgroundColor: 'rgba(15,23,42,0.85)', borderRadius: 10,
+    marginHorizontal: 20, paddingVertical: 8, paddingHorizontal: 12,
+    borderWidth: 1, borderColor: '#1e293b',
+  },
+  lineStatBox:   { flex: 1, alignItems: 'center' },
+  lineStatVal:   { fontSize: 17, fontWeight: '900' },
+  lineStatLabel: { color: '#475569', fontSize: 9, fontWeight: '700', textTransform: 'uppercase', marginTop: 1 },
+  lineStatFilled:{ color: '#334155', fontSize: 11, fontWeight: '600', marginLeft: 8 },
 
   countRow: {
     flexDirection: 'row', gap: 6, alignItems: 'center',

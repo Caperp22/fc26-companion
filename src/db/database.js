@@ -461,8 +461,17 @@ export const deleteLineup = (id) => {
 
 export const getRoster = (teamId) => {
   try {
+    // Migración perezosa: añadir columna playerStatus si no existe
+    try { db.execSync("ALTER TABLE roster ADD COLUMN playerStatus TEXT DEFAULT ''"); } catch {}
     return db.getAllSync('SELECT * FROM roster WHERE teamId = ? ORDER BY addedAt ASC', [teamId]);
   } catch { return []; }
+};
+
+export const setRosterPlayerStatus = (rosterId, status) => {
+  try {
+    db.runSync("UPDATE roster SET playerStatus = ? WHERE id = ?", [status ?? '', rosterId]);
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
 };
 
 export const addToRoster = (teamId, player) => {

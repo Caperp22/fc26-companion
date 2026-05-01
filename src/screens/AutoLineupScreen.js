@@ -21,8 +21,10 @@ import {
   getLineupsByTeam,
   getRoster,
   removeFromRoster,
+  saveLineup,
   saveLineupByName,
   searchPlayersWithFilters,
+  setRosterPlayerStatus,
   updateCustomPlayer,
   updateRosterPlayer,
 } from '../db/database';
@@ -120,16 +122,33 @@ function PlayerFace({ player, size = 48 }) {
 }
 
 const STATUS_COLOR = { TIT: '#1d4ed8', SUP: '#6d28d9', RES: '#374151' };
+const PLAYER_STATUS_CFG = {
+  '':           { label: '—',           icon: 'ellipse-outline',   color: '#475569' },
+  lesionado:    { label: 'Lesionado',   icon: 'bandage-outline',   color: '#ef4444' },
+  suspendido:   { label: 'Suspendido',  icon: 'ban-outline',       color: '#f59e0b' },
+  duda:         { label: 'Duda',        icon: 'help-circle-outline', color: '#f97316' },
+};
 
 // ── Fila de jugador en plantilla ──────────────────────────────
-function RosterItem({ item, onRemove, onEdit, assignment }) {
+function RosterItem({ item, onRemove, onEdit, onStatusChange, assignment }) {
   const player = useMemo(() => parsePlayer(item.playerData), [item.playerData]);
   const posLabel = (player.positions || player.position || '').split(',').map(p => POS_ES[p.trim()] || p.trim()).join(' / ');
+  const pStatus = item.playerStatus || '';
+  const statusCfg = PLAYER_STATUS_CFG[pStatus] ?? PLAYER_STATUS_CFG[''];
+
   return (
     <View style={s.rosterItem}>
       <PlayerFace player={player} size={46} />
       <View style={{ flex: 1 }}>
-        <Text style={s.rosterName} numberOfLines={1}>{item.playerName}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+          <Text style={s.rosterName} numberOfLines={1}>{item.playerName}</Text>
+          {pStatus !== '' && (
+            <View style={[s.playerStatusBadge, { backgroundColor: statusCfg.color + '22', borderColor: statusCfg.color }]}>
+              <Ionicons name={statusCfg.icon} size={10} color={statusCfg.color} />
+              <Text style={[s.playerStatusText, { color: statusCfg.color }]}>{statusCfg.label}</Text>
+            </View>
+          )}
+        </View>
         <Text style={s.rosterMeta}>
           {posLabel}
           {player.age ? `  ·  ${player.age}a` : ''}
@@ -142,10 +161,13 @@ function RosterItem({ item, onRemove, onEdit, assignment }) {
           {assignment.lineup ? <Text style={s.statusLineup} numberOfLines={1}>{assignment.lineup}</Text> : null}
         </View>
       )}
-      <TouchableOpacity onPress={onEdit} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ marginLeft: 8 }}>
+      <TouchableOpacity onPress={onStatusChange} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }} style={{ marginLeft: 6 }}>
+        <Ionicons name={statusCfg.icon} size={16} color={pStatus ? statusCfg.color : '#334155'} />
+      </TouchableOpacity>
+      <TouchableOpacity onPress={onEdit} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }} style={{ marginLeft: 6 }}>
         <Ionicons name="pencil-outline" size={17} color={player.isCustom ? '#3b82f6' : '#475569'} />
       </TouchableOpacity>
-      <TouchableOpacity onPress={onRemove} hitSlop={{ top: 8, bottom: 8, left: 10, right: 10 }} style={{ marginLeft: 6 }}>
+      <TouchableOpacity onPress={onRemove} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ marginLeft: 6 }}>
         <Ionicons name="trash-outline" size={18} color="#475569" />
       </TouchableOpacity>
     </View>
@@ -586,6 +608,16 @@ export default function AutoLineupScreen({ route, navigation }) {
     Alert.alert('Importación completa', `${added} jugadores añadidos a la plantilla.`);
   };
 
+  const handleStatusChange = (item) => {
+    Alert.alert('Estado del jugador', item.playerName, [
+      { text: 'Disponible',  onPress: () => { setRosterPlayerStatus(item.id, '');           load(); } },
+      { text: 'Lesionado',   onPress: () => { setRosterPlayerStatus(item.id, 'lesionado');  load(); } },
+      { text: 'Suspendido',  onPress: () => { setRosterPlayerStatus(item.id, 'suspendido'); load(); } },
+      { text: 'Duda',        onPress: () => { setRosterPlayerStatus(item.id, 'duda');       load(); } },
+      { text: 'Cancelar', style: 'cancel' },
+    ]);
+  };
+
   const handleSuggest = () => {
     if (roster.length === 0) {
       Alert.alert('Plantilla vacía', 'Añade jugadores antes de generar sugerencias.');
@@ -748,6 +780,7 @@ export default function AutoLineupScreen({ route, navigation }) {
                 assignment={playerAssignments[item.playerName]}
                 onRemove={() => handleRemove(item)}
                 onEdit={() => setEditingItem({ rosterId: item.id, player: p })}
+                onStatusChange={() => handleStatusChange(item)}
               />
             );
           })
@@ -949,6 +982,9 @@ const s = StyleSheet.create({
   statusBadge:   { alignItems: 'center', marginRight: 6, minWidth: 36 },
   statusText:    { color: '#fff', fontSize: 10, fontWeight: '900' },
   statusLineup:  { color: '#94a3b8', fontSize: 9, maxWidth: 48 },
+
+  playerStatusBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 5, paddingVertical: 2, borderRadius: 6, borderWidth: 1 },
+  playerStatusText:  { fontSize: 9, fontWeight: '700' },
 
   bestFormRow:     { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#1e293b', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#f59e0b33' },
   bestFormLabel:   { color: '#94a3b8', fontSize: 12, fontWeight: '600', flex: 1 },
