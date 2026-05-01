@@ -21,6 +21,7 @@ import {
   getLineupsByTeam,
   getRoster,
   removeFromRoster,
+  saveLineup,
   searchPlayersWithFilters,
   updateCustomPlayer,
   updateRosterPlayer,
@@ -115,11 +116,9 @@ function RosterItem({ item, onRemove, onEdit }) {
         <Text style={s.rosterName} numberOfLines={1}>{item.playerName}</Text>
         <Text style={s.rosterMeta}>{posLabel}  ·  {player.club || '—'}</Text>
       </View>
-      {player.isCustom && (
-        <TouchableOpacity onPress={onEdit} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ marginRight: 10 }}>
-          <Ionicons name="pencil-outline" size={17} color="#3b82f6" />
-        </TouchableOpacity>
-      )}
+      <TouchableOpacity onPress={onEdit} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ marginRight: 10 }}>
+        <Ionicons name="pencil-outline" size={17} color={player.isCustom ? '#3b82f6' : '#475569'} />
+      </TouchableOpacity>
       <TouchableOpacity onPress={onRemove} hitSlop={{ top: 8, bottom: 8, left: 10, right: 10 }}>
         <Ionicons name="trash-outline" size={18} color="#475569" />
       </TouchableOpacity>
@@ -403,6 +402,60 @@ function ImportLineupModal({ visible, teamId, onClose, onImport }) {
   );
 }
 
+// ── Estadísticas de plantilla ─────────────────────────────────
+const DEF_POS = ['GK', 'CB', 'LB', 'RB', 'LWB', 'RWB'];
+const MID_POS = ['CDM', 'CM', 'CAM', 'LM', 'RM'];
+const ATT_POS = ['LW', 'RW', 'CF', 'ST'];
+
+function SquadStatsCard({ roster }) {
+  const stats = useMemo(() => {
+    const players = roster.map(r => parsePlayer(r.playerData)).filter(p => p.overall);
+    const total = players.length;
+    if (total === 0) return null;
+    const avg = Math.round(players.reduce((s, p) => s + p.overall, 0) / total);
+    const byLine = (positions) => {
+      const group = players.filter(p => {
+        const pos = (p.positions || p.position || '').split(',').map(x => x.trim());
+        return pos.some(po => positions.includes(po));
+      });
+      const groupAvg = group.length ? Math.round(group.reduce((s, p) => s + p.overall, 0) / group.length) : 0;
+      return { count: group.length, avg: groupAvg };
+    };
+    return { total, avg, def: byLine(DEF_POS), mid: byLine(MID_POS), att: byLine(ATT_POS) };
+  }, [roster]);
+
+  if (!stats) return null;
+  return (
+    <View style={ss.card}>
+      <Text style={ss.title}>Resumen de plantilla</Text>
+      <View style={ss.row}>
+        {[
+          { label: 'Total', value: stats.total, sub: `OVR ${stats.avg}`, color: '#60a5fa' },
+          { label: 'Defensa', value: stats.def.count, sub: `OVR ${stats.def.avg || '—'}`, color: '#22c55e' },
+          { label: 'Medio', value: stats.mid.count, sub: `OVR ${stats.mid.avg || '—'}`, color: '#f59e0b' },
+          { label: 'Ataque', value: stats.att.count, sub: `OVR ${stats.att.avg || '—'}`, color: '#ef4444' },
+        ].map(({ label, value, sub, color }) => (
+          <View key={label} style={ss.box}>
+            <Text style={[ss.value, { color }]}>{value}</Text>
+            <Text style={ss.label}>{label}</Text>
+            <Text style={ss.sub}>{sub}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const ss = StyleSheet.create({
+  card:  { backgroundColor: '#1e293b', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#334155' },
+  title: { color: '#94a3b8', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 },
+  row:   { flexDirection: 'row', justifyContent: 'space-around' },
+  box:   { alignItems: 'center', gap: 2 },
+  value: { fontSize: 22, fontWeight: '900' },
+  label: { color: '#94a3b8', fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
+  sub:   { color: '#475569', fontSize: 10 },
+});
+
 // ── Pantalla principal ────────────────────────────────────────
 export default function AutoLineupScreen({ route, navigation }) {
   const { teamId, teamName = 'Plantilla' } = route.params || {};
@@ -499,6 +552,48 @@ export default function AutoLineupScreen({ route, navigation }) {
     setSuggestions({ first, second, bestForm });
   };
 
+  const handleSaveBoth = () => {
+    if (!suggestions || !teamId) return;
+    const f = suggestions.bestForm || formation;
+    const secondPlayers = Object.values(suggestions.second.assignment).filter(Boolean);
+
+    // Titular: bench = primera mitad de segunda XI
+    const titBench = {};
+    BENCH_IDS.forEach((id, i) => { if (secondPlayers[i]) titBench[id] = secondPlayers[i]; });
+
+    // Reservas: jugadores no asignados en ninguna alineación
+    const usedNames = new Set([
+      ...Object.values(suggestions.first.assignment).filter(Boolean).map(p => p.name),
+      ...secondPlayers.map(p => p.name),
+    ]);
+    const rest = roster.map(r => parsePlayer(r.playerData))
+      .filter(p => p.overall && !usedNames.has(p.name))
+      .sort((a, b) => b.overall - a.overall);
+    const titReserves = {};
+    RESERVE_IDS.forEach((id, i) => { if (rest[i]) titReserves[id] = rest[i]; });
+
+    const r1 = saveLineup({ teamId, lineupId: null, name: 'Titular', formation: f,
+      squad: suggestions.first.assignment, bench: titBench, reserves: titReserves });
+    if (!r1.ok) { Alert.alert('Error', r1.error || 'No se pudo guardar la alineación titular.'); return; }
+
+    // Alternativa: bench = resto de jugadores no usados como reserva de titular
+    const altPool = rest.slice(RESERVE_IDS.length);
+    const altBench = {};
+    BENCH_IDS.forEach((id, i) => { if (altPool[i]) altBench[id] = altPool[i]; });
+
+    const r2 = saveLineup({ teamId, lineupId: null, name: 'Alternativa', formation: f,
+      squad: suggestions.second.assignment, bench: altBench, reserves: {} });
+
+    if (!r2.ok) {
+      Alert.alert('Titular guardada', `Alternativa: ${r2.error || 'no guardada'}.`);
+    } else {
+      Alert.alert('Alineaciones guardadas', 'Titular y Alternativa guardadas en el equipo.', [
+        { text: 'Ver equipo', onPress: () => navigation.popToTop() },
+        { text: 'Seguir editando' },
+      ]);
+    }
+  };
+
   const handleLoad = (assignment, withBench = false) => {
     let bench = {}, reserves = {};
     if (withBench && suggestions) {
@@ -591,6 +686,8 @@ export default function AutoLineupScreen({ route, navigation }) {
         )}
       </View>
 
+      <SquadStatsCard roster={roster} />
+
       {/* Botón sugerir */}
       <TouchableOpacity
         style={[s.suggestBtn, roster.length === 0 && s.suggestBtnDisabled]}
@@ -633,6 +730,11 @@ export default function AutoLineupScreen({ route, navigation }) {
             score={suggestions.second.score}
             onLoad={() => handleLoad(suggestions.second.assignment, false)}
           />
+
+          <TouchableOpacity style={s.saveAllBtn} onPress={handleSaveBoth}>
+            <Ionicons name="save-outline" size={16} color="#86efac" />
+            <Text style={s.saveAllBtnText}>Guardar ambas alineaciones</Text>
+          </TouchableOpacity>
 
           {unassigned.length > 0 && (
             <View style={s.card}>
@@ -745,6 +847,13 @@ const s = StyleSheet.create({
 
   loadBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#1d4ed8', borderRadius: 10, paddingVertical: 11, marginTop: 10 },
   loadBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+
+  saveAllBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+    backgroundColor: '#052e16', borderRadius: 14, paddingVertical: 15,
+    borderWidth: 1, borderColor: '#16a34a',
+  },
+  saveAllBtnText: { color: '#86efac', fontSize: 15, fontWeight: '800' },
 
   compareRow:  { flexDirection: 'row', backgroundColor: '#1e293b', borderRadius: 14, borderWidth: 1, borderColor: '#334155', overflow: 'hidden' },
   compareBox:  { flex: 1, alignItems: 'center', paddingVertical: 14, gap: 2 },
