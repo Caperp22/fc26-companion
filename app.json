@@ -2,7 +2,7 @@
   "expo": {
     "name": "FC 26 Companion",
     "slug": "fc26-companion",
-    "version": "1.0.0",
+    "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "fc26companion",

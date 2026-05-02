@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 import { useEffect, useState } from 'react';
 import {
   Alert,
@@ -222,6 +223,7 @@ export default function TeamsScreen({ navigation, autoLineupRoute = 'AutoLineup'
         data={teams}
         keyExtractor={(t) => t.id.toString()}
         contentContainerStyle={styles.list}
+        ListFooterComponent={<Text style={styles.versionText}>v{Constants.expoConfig?.version ?? '—'}</Text>}
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Ionicons name="shield-outline" size={56} color="#334155" />
@@ -320,6 +322,7 @@ const styles = StyleSheet.create({
   squadStatValue: { fontSize: 20, fontWeight: '900' },
   squadStatLabel: { color: '#475569', fontSize: 10, fontWeight: '600', textTransform: 'uppercase' },
 
+  versionText: { color: '#334155', fontSize: 11, textAlign: 'center', paddingVertical: 16 },
   emptyState: { alignItems: 'center', marginTop: 80, paddingHorizontal: 40 },
   emptyTitle: { color: '#64748b', fontSize: 18, fontWeight: '700', marginTop: 16, marginBottom: 8 },
   emptyText: { color: '#475569', fontSize: 14, textAlign: 'center', lineHeight: 22 },

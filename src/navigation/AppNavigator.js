@@ -43,14 +43,16 @@ function SquadStackNavigator() {
   );
 }
 
+function PlantillaTeamsScreen(props) {
+  return <TeamsScreen {...props} autoLineupRoute="PlantillaAutoLineup" />;
+}
+
 function PlantillaStackNavigator() {
   return (
     <PlantillaStack.Navigator screenOptions={HEADER}>
-      <PlantillaStack.Screen name="PlantillaTeams"    options={{ title: 'Mis Equipos' }}>
-        {(props) => <TeamsScreen {...props} autoLineupRoute="PlantillaAutoLineup" />}
-      </PlantillaStack.Screen>
-      <PlantillaStack.Screen name="PlantillaAutoLineup" component={AutoLineupScreen}   options={({ route }) => ({ title: route.params?.teamName ?? 'Plantilla' })} />
-      <PlantillaStack.Screen name="PlantillaDetail"     component={PlayerDetailScreen} options={{ title: 'Ficha del Jugador' }} />
+      <PlantillaStack.Screen name="PlantillaTeams"      component={PlantillaTeamsScreen} options={{ title: 'Mis Equipos' }} />
+      <PlantillaStack.Screen name="PlantillaAutoLineup" component={AutoLineupScreen}     options={({ route }) => ({ title: route.params?.teamName ?? 'Plantilla' })} />
+      <PlantillaStack.Screen name="PlantillaDetail"     component={PlayerDetailScreen}   options={{ title: 'Ficha del Jugador' }} />
     </PlantillaStack.Navigator>
   );
 }
